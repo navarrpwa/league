@@ -1,0 +1,1352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>League Auction</title>
+<meta name="theme-color" content="#071A24">
+<meta name="description" content="Player registration, team logins and live auction for your league.">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800;900&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js" crossorigin="anonymous"></script>
+<style>
+/* ========== Tokens ========== */
+:root{
+  --gold:#FFC629;--teal:#19C9B5;--bg:#071A24;--red:#FF4B3E;--green:#35D07F;
+  --panel:color-mix(in srgb,var(--bg) 86%,#7fd4e0 14%);
+  --panel-2:color-mix(in srgb,var(--bg) 76%,#7fd4e0 24%);
+  --line:color-mix(in srgb,var(--bg) 66%,#9fe0e8 34%);
+  --ink:#F3F8F6;--ink-2:#A9C6CA;--ink-3:#7E9EA4;--on-gold:#14110A;
+  --display:'Big Shoulders Display','Arial Narrow',Impact,sans-serif;
+  --body:'Figtree',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --slant:polygon(14px 0,100% 0,calc(100% - 14px) 100%,0 100%);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.5;-webkit-text-size-adjust:100%}
+body{min-height:100dvh}
+h1,h2,h3{font-family:var(--display);font-weight:800;line-height:1.05;margin:0;letter-spacing:.01em}
+h1{font-size:clamp(2.4rem,7vw,4.6rem)}h2{font-size:1.9rem}h3{font-size:1.3rem}
+p{margin:0}a{color:var(--gold)}
+button,input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--teal);outline-offset:2px}
+.num{font-family:var(--display);font-variant-numeric:tabular-nums;font-weight:800}
+.muted{color:var(--ink-2)}.small{font-size:.875rem}.hide{display:none!important}
+.row{display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}
+.stack{display:grid;gap:1rem}.grow{flex:1 1 auto;min-width:0}
+
+/* ========== Controls ========== */
+.btn{appearance:none;border:1px solid var(--line);background:var(--panel-2);padding:.6rem 1rem;border-radius:6px;font-weight:600;cursor:pointer;text-decoration:none;color:var(--ink);display:inline-flex;align-items:center;justify-content:center;gap:.4rem;min-height:44px;transition:background .12s,border-color .12s}
+.btn:hover:not(:disabled){border-color:var(--ink-2)}
+.btn:disabled{opacity:.42;cursor:not-allowed}
+.btn.primary{background:var(--gold);border-color:var(--gold);color:var(--on-gold)}
+.btn.teal{background:var(--teal);border-color:var(--teal);color:#04191b}
+.btn.danger{background:var(--red);border-color:var(--red);color:#1b0503}
+.btn.good{background:var(--green);border-color:var(--green);color:#03180c}
+.btn.ghost{background:transparent}
+.btn.sm{padding:.25rem .6rem;min-height:34px;font-size:.875rem}
+label.f{display:grid;gap:.3rem;font-size:.875rem;font-weight:600;color:var(--ink-2)}
+label.f small{font-weight:400;color:var(--ink-3)}
+input:not([type=checkbox]):not([type=color]):not([type=range]):not([type=file]),select,textarea{width:100%;background:color-mix(in srgb,var(--bg) 70%,#000 30%);border:1px solid var(--line);border-radius:6px;padding:.6rem .7rem;min-height:44px;color:var(--ink)}
+input::placeholder,textarea::placeholder{color:var(--ink-3)}
+input[type=color]{width:100%;height:44px;padding:2px;background:transparent;border:1px solid var(--line);border-radius:6px}
+select option{background:#0c2531}
+.check{display:flex;gap:.6rem;align-items:center;font-weight:500;color:var(--ink);min-height:44px}
+.check input{width:20px;height:20px;accent-color:var(--teal)}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:1.1rem}
+.panel>h3{margin-bottom:.75rem}
+.tag{display:inline-block;padding:.05rem .5rem;border-radius:4px;font-size:.78rem;font-weight:600;background:var(--panel-2);white-space:nowrap}
+.tag.pending,.tag.skipped,.tag.paused{background:#5a4608;color:#FFE08A}.tag.approved,.tag.queued{background:#0b4a44;color:#8FF2E5}
+.tag.rejected,.tag.unsold{background:#5b1a15;color:#FFB0A9}.tag.withdrawn{background:#2b3d44;color:#B6CACE}
+.tag.sold,.tag.live{background:#0d4a2b;color:#96F0BF}.tag.active{background:var(--gold);color:var(--on-gold)}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:.92rem}
+th{text-align:left;font-weight:600;color:var(--ink-2);font-size:.82rem;padding:.65rem .8rem;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:.55rem .8rem;border-bottom:1px solid color-mix(in srgb,var(--line) 55%,transparent);vertical-align:middle}
+tr:last-child td{border-bottom:0}tbody tr:hover{background:color-mix(in srgb,var(--panel-2) 55%,transparent)}
+td.r,th.r{text-align:right}.empty{padding:2rem 1rem;text-align:center;color:var(--ink-2)}
+.av{width:42px;height:42px;border-radius:6px;object-fit:cover;background:var(--panel-2);display:inline-grid;place-items:center;font-family:var(--display);font-weight:800;color:var(--ink-2);flex:none;overflow:hidden}
+.av.lg{width:72px;height:72px;font-size:1.6rem}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.75rem}
+.stat{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--c,var(--line));border-radius:6px;padding:.75rem 1rem}
+.stat b{display:block;font-family:var(--display);font-size:2.3rem;line-height:1.05;font-weight:800;font-variant-numeric:tabular-nums}
+.stat span{font-size:.85rem;color:var(--ink-2)}
+.bar-row{display:grid;grid-template-columns:minmax(80px,150px) 1fr auto;align-items:center;gap:.7rem;padding:.3rem 0;font-size:.9rem}
+.bar-track{height:12px;display:flex;align-items:center}.bar{height:12px;border-radius:0 4px 4px 0;background:var(--teal);min-width:2px}
+.bar-row:hover .bar{filter:brightness(1.2)}
+
+/* ========== Banners, toasts, modal ========== */
+#conn{position:fixed;left:0;right:0;top:0;z-index:80;background:var(--red);color:#190302;font-weight:700;text-align:center;padding:.5rem 1rem;display:none}
+#conn.on{display:block}#conn.warn{background:var(--gold);color:var(--on-gold)}
+#toasts{position:fixed;right:16px;bottom:16px;left:16px;z-index:90;display:grid;gap:.5rem;justify-items:end;pointer-events:none}
+.toast{background:#102e3a;border:1px solid var(--line);border-left:5px solid var(--teal);padding:.7rem 1rem;border-radius:6px;max-width:440px;box-shadow:0 8px 30px #0008;animation:toast .18s ease-out}
+.toast.err{border-left-color:var(--red)}@keyframes toast{from{transform:translateY(8px);opacity:0}}
+.modal-bg{position:fixed;inset:0;background:#02090dd0;z-index:70;display:grid;place-items:center;padding:16px;overflow:auto}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:10px;width:min(640px,100%);padding:1.4rem;display:grid;gap:1rem;max-height:calc(100dvh - 32px);overflow:auto}
+.modal.wide{width:min(900px,100%)}
+
+/* ========== Public pages ========== */
+.page{max-width:980px;margin:0 auto;padding:1.25rem 16px 3rem}
+.topline{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.9rem 16px;border-bottom:1px solid var(--line)}
+.brand{display:flex;gap:.6rem;align-items:center;text-decoration:none;color:var(--ink);font-family:var(--display);font-weight:800;font-size:1.3rem;min-width:0}
+.brand span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brand img,.brand .av{width:36px;height:36px;border-radius:6px;object-fit:contain}
+.hero{padding:2.2rem 0 2rem;position:relative}
+.hero .state{display:inline-block;background:var(--gold);color:var(--on-gold);font-family:var(--display);font-weight:800;font-size:1.25rem;padding:.2rem 1.4rem;clip-path:var(--slant);margin-bottom:1rem}
+.doors{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin-top:1.5rem}
+.door{display:block;text-decoration:none;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-top:5px solid var(--c);border-radius:8px;padding:1.2rem}
+.door:hover{background:var(--panel-2)}.door h2{margin-bottom:.35rem}.door p{color:var(--ink-2)}
+.authbox{max-width:430px;margin:3rem auto 0}
+.photo-pick{display:flex;gap:1rem;align-items:center;flex-wrap:wrap}
+.photo-prev{width:112px;height:112px;border-radius:8px;object-fit:cover;background:var(--panel-2);border:1px dashed var(--line);display:grid;place-items:center;color:var(--ink-3);font-size:.8rem;text-align:center}
+.crop-wrap{position:relative;width:min(360px,100%);aspect-ratio:1;margin:0 auto;touch-action:none;cursor:grab;border-radius:8px;overflow:hidden;background:#000}
+.crop-wrap canvas{width:100%;height:100%;display:block}
+.pcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:.9rem}
+.pcard{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.pcard .ph{aspect-ratio:1;background:var(--panel-2);display:grid;place-items:center;font-family:var(--display);font-size:3rem;color:var(--ink-3);overflow:hidden}
+.pcard img{width:100%;height:100%;object-fit:cover;display:block}.pcard .b{padding:.7rem .8rem;display:grid;gap:.25rem}
+
+/* ========== Admin shell ========== */
+.shell{display:grid;grid-template-columns:232px 1fr;min-height:100dvh}
+.side{background:color-mix(in srgb,var(--bg) 92%,#000 8%);border-right:1px solid var(--line);padding:1rem .6rem;position:sticky;top:0;height:100dvh;overflow:auto;display:flex;flex-direction:column;gap:.15rem}
+.side .brand{padding:0 .5rem 1rem}
+.side a.nav{display:flex;justify-content:space-between;padding:.48rem .7rem;border-radius:5px;color:var(--ink-2);text-decoration:none;font-weight:500;font-size:.94rem}
+.side a.nav:hover{background:var(--panel);color:var(--ink)}
+.side a.nav.on{background:var(--gold);color:var(--on-gold);font-weight:700}
+.side .grp{font-size:.78rem;color:var(--ink-3);padding:.8rem .7rem .2rem}
+.main{min-width:0;display:flex;flex-direction:column}
+.bar-top{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.7rem 1.2rem;border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:5}
+.content{padding:1.2rem;display:grid;gap:1.1rem;min-width:0}
+@media(max-width:860px){.shell{grid-template-columns:1fr}.side{position:static;height:auto;flex-direction:row;overflow-x:auto;align-items:center;padding:.5rem;border-right:0;border-bottom:1px solid var(--line)}.side .grp{display:none}.side .brand{padding:0 .5rem 0 0;flex:none}.side a.nav{white-space:nowrap;flex:none}.bar-top{position:static}}
+
+/* ========== Control room ========== */
+.room{display:grid;grid-template-columns:minmax(230px,300px) minmax(320px,1fr) minmax(250px,320px);gap:1rem;align-items:start}
+@media(max-width:1180px){.room{grid-template-columns:1fr}}
+.lot-list{max-height:560px;overflow:auto;display:grid;gap:.25rem;margin-top:.6rem}
+.lot{display:flex;gap:.55rem;align-items:center;padding:.35rem .4rem;border-radius:5px;background:transparent;border:0;text-align:left;cursor:pointer;width:100%}
+.lot:hover:not(:disabled){background:var(--panel-2)}.lot:disabled{cursor:default;opacity:.55}
+.block-now{display:grid;grid-template-columns:auto 1fr auto;gap:1rem;align-items:center}
+.block-now .bid{font-family:var(--display);font-weight:900;font-size:4rem;line-height:1;color:var(--gold);font-variant-numeric:tabular-nums;text-align:right}
+.phase-strip{display:flex;gap:2px;margin:.9rem 0;flex-wrap:wrap}
+.phase-strip span{flex:1 1 90px;text-align:center;padding:.3rem .2rem;background:var(--panel-2);font-size:.78rem;color:var(--ink-3);font-weight:600}
+.phase-strip span.on{background:var(--gold);color:var(--on-gold)}.phase-strip span.past{color:var(--ink-2)}
+.ctl{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.5rem}
+.ctl .btn{min-height:54px;font-size:1rem}
+.feed{display:grid;gap:.1rem;max-height:430px;overflow:auto;font-size:.87rem}
+.feed div{display:flex;justify-content:space-between;gap:.6rem;padding:.3rem .4rem;border-bottom:1px solid color-mix(in srgb,var(--line) 45%,transparent)}
+.feed .rej{color:#FFB0A9}.feed .ok b{color:var(--gold)}
+
+/* ========== Team page ========== */
+.team-head h1{font-size:clamp(1.8rem,6vw,2.6rem)}.team-head{display:flex;gap:1rem;align-items:center;padding:.7rem 1rem;border-radius:8px;background:var(--panel);border:1px solid var(--line);border-left:8px solid var(--tc,var(--gold))}
+.bidbox{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:1.1rem;display:grid;gap:1rem}
+.bidbox.lc{border-color:var(--red);box-shadow:0 0 0 2px var(--red) inset}
+.bidgrid{display:grid;grid-template-columns:96px 1fr;gap:1rem;align-items:center}
+.bidgrid .ph{width:96px;height:96px;border-radius:8px;object-fit:cover;background:var(--panel-2);display:grid;place-items:center;font-family:var(--display);font-size:2.6rem;color:var(--ink-3)}
+.figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:.6rem}
+.figs div span{display:block;font-size:.8rem;color:var(--ink-2)}.figs div b{font-family:var(--display);font-size:1.9rem;line-height:1.1;font-variant-numeric:tabular-nums}
+.bigbid{width:100%;min-height:92px;border:0;border-radius:8px;background:var(--gold);color:var(--on-gold);font-family:var(--display);font-weight:900;font-size:2.6rem;cursor:pointer;transition:transform .08s}
+.bigbid:active:not(:disabled){transform:scale(.98)}
+.bigbid:disabled{background:var(--panel-2);color:var(--ink-2);font-size:1.5rem;cursor:not-allowed;font-weight:700}
+
+/* ========== Projector ========== */
+.pj-root{position:fixed;inset:0;background:#000;overflow:hidden;cursor:none}
+.stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform-origin:center;background:var(--bg);overflow:hidden;font-family:var(--body);color:var(--ink)}
+.stage::before{content:"";position:absolute;inset:0;background:
+  linear-gradient(112deg,transparent 0 22%,color-mix(in srgb,var(--teal) 7%,transparent) 22% 23%,transparent 23% 74%,color-mix(in srgb,var(--gold) 6%,transparent) 74% 76%,transparent 76%),
+  radial-gradient(1200px 500px at 50% -80px,color-mix(in srgb,var(--teal) 20%,transparent),transparent 72%)}
+.scene{position:absolute;inset:0 0 96px 0}
+.statsbar{position:absolute;left:0;right:0;bottom:0;height:96px;background:color-mix(in srgb,var(--bg) 70%,#000 30%);border-top:3px solid var(--gold);display:grid;grid-template-columns:repeat(5,1fr) 1.6fr;align-items:center;z-index:30}
+.statsbar .s{padding:0 30px;border-right:1px solid var(--line);display:flex;align-items:baseline;gap:14px;white-space:nowrap}
+.statsbar b{font-family:var(--display);font-size:54px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
+.statsbar span{font-size:21px;color:var(--ink-2);font-weight:500}
+.statsbar .prog{padding:0 34px;display:grid;gap:8px}.prog .t{display:flex;justify-content:space-between;align-items:baseline}
+.prog .tr{height:12px;background:var(--panel-2);border-radius:0 4px 4px 0}.prog .fi{height:100%;background:var(--gold);border-radius:0 4px 4px 0;transition:width .8s}
+.pj-top{position:absolute;left:0;right:0;top:0;height:92px;display:flex;align-items:center;justify-content:space-between;padding:0 44px;z-index:5}
+.pj-brand{display:flex;gap:16px;align-items:center;font-family:var(--display);font-size:38px;font-weight:800}
+.pj-brand img,.pj-brand .av{width:60px;height:60px;object-fit:contain;border-radius:8px}
+.pill{font-family:var(--display);font-weight:800;font-size:36px;padding:4px 40px;background:var(--panel-2);clip-path:polygon(18px 0,100% 0,calc(100% - 18px) 100%,0 100%)}
+.pill.open{background:var(--teal);color:#04191b}.pill.lc{background:var(--red);color:#fff}.pill.closed{background:var(--gold);color:var(--on-gold)}
+.pj-live{position:absolute;inset:92px 44px 24px;display:grid;grid-template-columns:340px 1fr 400px;gap:32px}
+.pj-live .col{display:flex;flex-direction:column;gap:20px;min-height:0}
+.card{background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--line);border-radius:10px;padding:26px 28px}
+.lab{font-size:24px;color:var(--ink-2);font-weight:500}
+.val{font-family:var(--display);font-size:60px;font-weight:800;line-height:1.05}
+.val.sm{font-size:46px}
+.center{display:grid;grid-template-rows:auto 1fr;gap:12px;text-align:center;min-height:0}
+.bidnum{font-family:var(--display);font-weight:900;font-size:262px;line-height:.92;color:var(--gold);font-variant-numeric:tabular-nums;letter-spacing:-.005em}
+.bidnum small{font-size:64px;font-weight:800;margin-left:14px;color:var(--ink)}
+.bidlab{font-size:32px;color:var(--ink-2);font-weight:600}
+.bump{animation:bump .5s cubic-bezier(.2,.9,.3,1)}
+@keyframes bump{0%{transform:scale(.9)}45%{transform:scale(1.07);text-shadow:0 0 44px color-mix(in srgb,var(--gold) 70%,transparent)}100%{transform:scale(1)}}
+.center-low{display:grid;grid-template-columns:300px 1fr 210px;gap:28px;align-items:center;text-align:left;min-height:0}
+.pj-photo{width:300px;height:400px;object-fit:cover;object-position:top;border-radius:10px;border:4px solid var(--line);background:var(--panel-2);display:grid;place-items:center;font-family:var(--display);font-size:130px;color:var(--ink-3)}
+.pj-name{font-family:var(--display);font-size:78px;font-weight:900;line-height:1;overflow-wrap:break-word}.pj-name.long{font-size:62px}
+.pj-pos{font-size:36px;color:var(--ink-2);font-weight:600;margin-top:12px}
+.ring{position:relative;width:210px;height:210px}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}.ring circle{fill:none;stroke-width:14}
+.ring .tr{stroke:var(--panel-2)}.ring .fg{stroke:var(--teal);stroke-linecap:round;transition:stroke-dashoffset .25s linear,stroke .2s}
+.ring b{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--display);font-size:96px;font-weight:900;font-variant-numeric:tabular-nums}
+.ring.urgent .fg{stroke:var(--red)}.ring.urgent b{color:var(--red)}
+.ring small{position:absolute;left:0;right:0;bottom:-34px;text-align:center;font-size:22px;color:var(--ink-2)}
+.lead-logo{width:190px;height:190px;object-fit:contain;border-radius:12px;background:var(--panel-2);display:grid;place-items:center;font-family:var(--display);font-size:80px;font-weight:900;margin-bottom:14px}
+.lead{border-left:10px solid var(--lc,var(--line))}.lead.swap{animation:swap .45s cubic-bezier(.2,.9,.3,1)}
+@keyframes swap{from{transform:translateX(60px);opacity:0}}
+.act{display:flex;justify-content:space-between;font-size:30px;padding:9px 0;border-bottom:1px solid var(--line);gap:14px}
+.act b{font-family:var(--display);font-size:38px;font-variant-numeric:tabular-nums;line-height:1.1}.act span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.act:first-child{color:var(--gold)}
+/* last call */
+.stage.lastcall .frame{position:absolute;inset:0;border:14px solid var(--red);z-index:20;pointer-events:none;animation:frame 1s ease-in-out infinite alternate}
+@keyframes frame{from{opacity:.45}to{opacity:1}}
+.lc-banner{position:absolute;left:0;right:0;top:0;height:92px;background:var(--red);color:#fff;z-index:12;text-align:center;font-family:var(--display);font-size:78px;font-weight:900;line-height:92px;letter-spacing:.06em;animation:drop .35s cubic-bezier(.2,.9,.3,1)}
+@keyframes drop{from{transform:translateY(-100%)}}
+.pause-veil{position:absolute;inset:0 0 96px 0;background:#020a0ee0;z-index:25;display:grid;place-items:center;font-family:var(--display);font-weight:900;font-size:170px;color:var(--gold)}
+/* intro */
+.intro{position:absolute;inset:0;--u:1s;overflow:hidden;background:#020B10;animation:fadein calc(var(--u)*.4) both}
+@keyframes fadein{from{opacity:0}}
+.intro>*{position:absolute}
+.i-logo{left:50%;top:50%;width:300px;height:300px;margin:-190px 0 0 -150px;display:grid;place-items:center;font-family:var(--display);font-size:90px;font-weight:900;text-align:center;line-height:1;animation:logo calc(var(--u)*1.25) both calc(var(--u)*.2)}
+.i-logo img{width:100%;height:100%;object-fit:contain}
+@keyframes logo{0%{opacity:0;transform:scale(.5) rotate(-6deg)}35%{opacity:1;transform:scale(1)}80%{opacity:1;transform:scale(1.05)}100%{opacity:0;transform:scale(1.3)}}
+.i-next{left:-20px;right:-20px;top:430px;height:220px;background:var(--gold);color:var(--on-gold);font-family:var(--display);font-size:190px;font-weight:900;text-align:center;line-height:220px;transform-origin:left;animation:next calc(var(--u)*1.3) both calc(var(--u)*1.3)}
+@keyframes next{0%{transform:scaleX(0) skewY(-2deg)}22%{transform:scaleX(1) skewY(-2deg)}78%{transform:scaleX(1) skewY(-2deg);opacity:1}100%{transform:translateX(110%) skewY(-2deg);opacity:1}}
+.i-photo{left:130px;top:90px;width:640px;height:790px;object-fit:cover;object-position:top;border-radius:12px;border:6px solid var(--gold);background:var(--panel-2);display:grid;place-items:center;font-family:var(--display);font-size:240px;color:var(--ink-3);animation:photo calc(var(--u)*1.1) cubic-bezier(.16,.8,.25,1) both calc(var(--u)*2.5)}
+@keyframes photo{from{opacity:0;transform:translateX(-160px) scale(1.2)}}
+.i-name{left:850px;right:70px;top:190px;font-family:var(--display);font-size:170px;font-weight:900;line-height:.95;overflow-wrap:anywhere;animation:name calc(var(--u)*.8) cubic-bezier(.16,.8,.25,1) both calc(var(--u)*3.4)}
+@keyframes name{from{opacity:0;transform:translateX(120px)}}
+.i-meta{left:850px;top:560px;display:flex;gap:18px;align-items:center;animation:name calc(var(--u)*.7) both calc(var(--u)*4.2)}
+.i-meta span{background:var(--panel-2);padding:6px 26px;font-size:44px;font-weight:600;clip-path:polygon(14px 0,100% 0,calc(100% - 14px) 100%,0 100%)}
+.i-base{left:850px;top:670px;animation:name calc(var(--u)*.6) both calc(var(--u)*5)}
+.i-base .lab{font-size:36px}.i-base b{display:block;font-family:var(--display);font-size:170px;line-height:1;font-weight:900;color:var(--gold);font-variant-numeric:tabular-nums}
+.fx-low .i-next,.fx-low .i-photo,.fx-low .i-name,.fx-low .i-meta,.fx-low .i-base{animation-name:fadein}
+.fx-low .i-next{animation-name:fadein;opacity:0;animation:nextlow calc(var(--u)*1.3) both calc(var(--u)*1.3)}
+@keyframes nextlow{0%,100%{opacity:0}20%,80%{opacity:1}}
+/* results */
+.result{position:absolute;inset:0;display:grid;grid-template-columns:680px 1fr;gap:60px;padding:70px 90px 40px;align-items:center;overflow:hidden;background:color-mix(in srgb,var(--rc,#000) 26%,#020B10)}
+.result::before{content:"";position:absolute;inset:-20% 56% -20% -10%;background:var(--rc);opacity:.55;transform:skewX(-9deg);animation:slash .55s cubic-bezier(.16,.8,.25,1) both}
+@keyframes slash{from{transform:skewX(-9deg) translateX(-100%)}}
+.result>*{position:relative}
+.r-photo{width:600px;height:760px;object-fit:cover;object-position:top;border-radius:12px;border:6px solid #fff;background:var(--panel-2);display:grid;place-items:center;font-family:var(--display);font-size:220px;color:var(--ink-3);animation:photo .55s cubic-bezier(.16,.8,.25,1) both .1s}
+.r-word{font-family:var(--display);font-size:290px;font-weight:900;line-height:.86;color:var(--gold);animation:stamp .45s cubic-bezier(.2,1.4,.4,1) both .25s;transform-origin:left center}
+@keyframes stamp{from{opacity:0;transform:scale(1.9)}}
+.r-name{font-family:var(--display);font-size:94px;font-weight:800;line-height:1;margin-top:16px;animation:name .4s both .55s;overflow-wrap:anywhere}
+.r-team{display:flex;gap:24px;align-items:center;margin-top:28px;animation:name .4s both .75s}
+.r-team .lead-logo{width:128px;height:128px;margin:0;font-size:56px}.r-team b{font-family:var(--display);font-size:74px;font-weight:800;line-height:1}
+.r-price{font-family:var(--display);font-size:200px;font-weight:900;line-height:1;margin-top:18px;font-variant-numeric:tabular-nums;animation:name .4s both .95s}
+.r-price small{font-size:60px;margin-left:12px}
+.r-spent{font-size:36px;color:var(--ink);font-weight:500;animation:name .4s both 1.1s}
+.result.unsold .r-word{color:#fff}.result.unsold{--rc:#59666b}.result.unsold .r-photo{filter:grayscale(1)}
+#confetti{position:absolute;inset:0;z-index:15;pointer-events:none}
+/* standby */
+.standby{position:absolute;inset:0;padding:60px 70px 30px;display:grid;grid-template-columns:1fr 760px;gap:50px;align-items:center}
+.standby .logo{width:170px;height:170px;object-fit:contain;border-radius:12px;background:var(--panel-2);display:grid;place-items:center;font-family:var(--display);font-size:70px;font-weight:900;margin-bottom:26px}
+.standby h1{font-size:140px;font-weight:900;line-height:.94;overflow-wrap:anywhere}.standby .sub{display:inline-block;font-family:var(--display);font-size:56px;font-weight:800;background:var(--gold);color:var(--on-gold);padding:4px 46px;clip-path:polygon(20px 0,100% 0,calc(100% - 20px) 100%,0 100%);margin-top:34px}
+.purse{font-size:30px;width:100%}.purse th{font-size:24px}.purse td{padding:9px 12px;border-bottom:1px solid var(--line)}.purse td.n{font-family:var(--display);font-size:38px;font-weight:800;text-align:right;font-variant-numeric:tabular-nums}.purse th.n{text-align:right}
+.ticker{position:absolute;left:70px;right:70px;bottom:18px;font-size:32px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ticker b{color:var(--gold)}
+.sound-chip{position:absolute;left:50%;transform:translateX(-50%);top:24px;z-index:40;background:var(--panel-2);padding:10px 20px;border-radius:6px;font-size:22px;cursor:pointer}
+.stage .conn{position:absolute;left:0;right:0;top:0;background:var(--red);color:#fff;font:800 40px var(--display);text-align:center;padding:8px;z-index:40}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="conn" role="alert"></div>
+<div id="toasts" aria-live="polite"></div>
+<div id="modal-root"></div>
+<script>
+'use strict';
+/* ========== 1. Configuration: paste your project URL and publishable key here ========== */
+const CONFIG = {
+  SUPABASE_URL: 'https://vwietarpsumgqpiitfct.supabase.co',
+  SUPABASE_KEY: 'sb_publishable_alwByCxHY4NTvta4PrhhAA_Y5fNhXQK',
+  BUCKET: 'league-media',
+};
+
+/* ========== 2. Utilities ========== */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ESC[c]);
+class Safe { constructor(s) { this.s = s; } toString() { return this.s; } }
+const raw = s => new Safe(s);
+// Tagged template: every interpolated value is escaped unless it is already safe HTML.
+const html = (st, ...v) => raw(st.reduce((o, s, i) => o + s + (i < v.length ? render1(v[i]) : ''), ''));
+const render1 = v => v instanceof Safe ? v.s : Array.isArray(v) ? v.map(render1).join('') : (v === null || v === undefined || v === false) ? '' : esc(v);
+const fmt = n => n === null || n === undefined ? '-' : Number(n).toLocaleString('en-US');
+const initials = n => String(n || '?').trim().split(/\s+/).slice(0, 2).map(x => x[0]).join('').toUpperCase();
+const when = t => t ? new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '';
+const clock = t => t ? new Date(t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '';
+const unit = () => Live.state?.settings?.currency_label || 'pts';
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function debounce(f, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => f(...a), ms); }; }
+
+function toast(msg, isErr = false) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (isErr ? ' err' : ''); el.textContent = msg; el.setAttribute('role', isErr ? 'alert' : 'status');
+  $('#toasts').append(el); setTimeout(() => el.remove(), isErr ? 7000 : 3500);
+}
+function friendlyError(e) {
+  const m = e?.message || String(e);
+  if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'Could not reach the server. Check the connection and try again.';
+  return m;
+}
+// Runs an action, reports failure, and keeps the triggering button disabled while it is in flight.
+async function act(fn, btn) {
+  if (btn) btn.disabled = true;
+  try { return await fn(); }
+  catch (e) { toast(friendlyError(e), true); return undefined; }
+  finally { if (btn) btn.disabled = false; }
+}
+async function rpc(name, args) {
+  const { data, error } = await sb.rpc(name, args);
+  if (error) throw error;
+  return data;
+}
+const mediaUrl = p => p ? `${CONFIG.SUPABASE_URL}/storage/v1/object/public/${CONFIG.BUCKET}/${String(p).split('/').map(encodeURIComponent).join('/')}` : '';
+const thumb = (p, name, cls = 'av') => p ? html`<img class="${cls}" src="${mediaUrl(p)}" alt="">` : html`<span class="${cls}" aria-hidden="true">${initials(name)}</span>`;
+
+/* ========== 3. Modals ========== */
+function openModal(content, { wide = false, onClose } = {}) {
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `<div class="modal ${wide ? 'wide' : ''}" role="dialog" aria-modal="true">${content}</div>`;
+  const close = () => { bg.remove(); document.removeEventListener('keydown', onKey); onClose?.(); };
+  const onKey = e => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  $('#modal-root').append(bg);
+  bg.addEventListener('click', e => { if (e.target.closest('[data-close]')) close(); });
+  $('input,select,textarea,button', bg)?.focus();
+  return { el: bg, close };
+}
+function confirmDialog({ title, body = '', confirmLabel = 'Confirm', tone = 'primary', input = null }) {
+  return new Promise(res => {
+    let done = false;
+    const m = openModal(html`<h2>${title}</h2><p class="muted">${body}</p>
+      ${input ? html`<label class="f">${input.label}<input id="cd-in" placeholder="${input.placeholder || ''}"></label>` : ''}
+      <div class="row" style="justify-content:flex-end"><button class="btn" data-close>Cancel</button><button class="btn ${tone}" id="cd-ok">${confirmLabel}</button></div>`,
+      { onClose: () => { if (!done) res(null); } });
+    $('#cd-ok', m.el).onclick = () => { done = true; const v = input ? $('#cd-in', m.el).value : true; m.close(); res(v); };
+  });
+}
+const formData = f => Object.fromEntries(new FormData(f).entries());
+
+/* ========== 4. Image crop and upload ========== */
+function cropImage(file, { out = 800, type = 'image/jpeg' } = {}) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) return reject(new Error('Choose an image file.'));
+    const img = new Image();
+    img.onerror = () => reject(new Error('This image could not be opened. Try a JPG or PNG.'));
+    img.onload = () => {
+      let done = false;
+      const m = openModal(html`<h2>Crop the photo</h2><p class="muted small">Drag to position. Use the slider to zoom.</p>
+        <div class="crop-wrap"><canvas width="720" height="720"></canvas></div>
+        <label class="f">Zoom<input type="range" id="cz" min="1" max="4" step="0.01" value="1"></label>
+        <div class="row" style="justify-content:flex-end"><button class="btn" data-close>Cancel</button><button class="btn primary" id="cu">Use photo</button></div>`,
+        { onClose: () => { URL.revokeObjectURL(img.src); if (!done) resolve(null); } });
+      const c = $('canvas', m.el), ctx = c.getContext('2d'), base = Math.max(720 / img.naturalWidth, 720 / img.naturalHeight);
+      let z = 1, x = 0, y = 0;
+      const draw = () => {
+        const s = base * z, w = img.naturalWidth * s, h = img.naturalHeight * s;
+        x = Math.min(0, Math.max(720 - w, x)); y = Math.min(0, Math.max(720 - h, y));
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 720, 720); ctx.drawImage(img, x, y, w, h);
+      };
+      x = (720 - img.naturalWidth * base) / 2; y = (720 - img.naturalHeight * base) / 2; draw();
+      $('#cz', m.el).oninput = e => {
+        const nz = +e.target.value, k = nz / z; x = 360 - (360 - x) * k; y = 360 - (360 - y) * k; z = nz; draw();
+      };
+      let drag = null;
+      c.onpointerdown = e => { drag = [e.clientX, e.clientY]; c.setPointerCapture(e.pointerId); };
+      c.onpointermove = e => {
+        if (!drag) return; const k = 720 / c.clientWidth;
+        x += (e.clientX - drag[0]) * k; y += (e.clientY - drag[1]) * k; drag = [e.clientX, e.clientY]; draw();
+      };
+      c.onpointerup = () => drag = null;
+      $('#cu', m.el).onclick = () => {
+        const o = document.createElement('canvas'); o.width = o.height = out;
+        const k = out / 720, s = base * z * k, g = o.getContext('2d');
+        if (type === 'image/jpeg') { g.fillStyle = '#fff'; g.fillRect(0, 0, out, out); }
+        g.drawImage(img, x * k, y * k, img.naturalWidth * s, img.naturalHeight * s);
+        o.toBlob(b => { done = true; m.close(); resolve(b); }, type, 0.86);
+      };
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
+async function uploadImage(blob, folder) {
+  const ext = blob.type === 'image/png' ? 'png' : 'jpg';
+  const path = `${folder}/${crypto.randomUUID()}.${ext}`;
+  const { error } = await sb.storage.from(CONFIG.BUCKET).upload(path, blob, { contentType: blob.type, upsert: false, cacheControl: '31536000' });
+  if (error) throw error;
+  return path;
+}
+// Wires up a preview box plus camera and gallery buttons. Returns a getter for the chosen blob.
+function photoPicker(root, { type = 'image/jpeg', out = 800, onPick } = {}) {
+  let blob = null;
+  const prev = $('[data-prev]', root);
+  $$('input[type=file]', root).forEach(inp => inp.onchange = async () => {
+    const f = inp.files[0]; inp.value = ''; if (!f) return;
+    try {
+      const b = await cropImage(f, { type, out }); if (!b) return;
+      blob = b;
+      const img = document.createElement('img'); img.className = prev.className; img.dataset.prev = ''; img.alt = 'Selected photo preview'; img.src = URL.createObjectURL(b);
+      const cur = $('[data-prev]', root); cur.replaceWith(img); onPick?.(b);
+    } catch (e) { toast(friendlyError(e), true); }
+  });
+  return () => blob;
+}
+const pickerHtml = (existing, name) => html`<div class="photo-pick">
+  ${existing ? html`<img class="photo-prev" data-prev src="${mediaUrl(existing)}" alt="Current photo">` : html`<div class="photo-prev" data-prev>${name || 'No photo yet'}</div>`}
+  <div class="row"><label class="btn"><input type="file" accept="image/*" capture="environment" class="hide">Take photo</label>
+  <label class="btn"><input type="file" accept="image/*" class="hide">Choose from gallery</label></div></div>`;
+
+/* ========== 5. CSV ========== */
+function toCsv(rows, cols) {
+  // A leading apostrophe stops spreadsheets treating user text as a formula.
+  const cell = v => { let s = v === null || v === undefined ? '' : String(v); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  return [cols.map(c => cell(c[0])).join(','), ...rows.map(r => cols.map(c => cell(typeof c[1] === 'function' ? c[1](r) : r[c[1]])).join(','))].join('\r\n');
+}
+function download(name, text) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + text], { type: 'text/csv;charset=utf-8' })); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+function parseCsv(t) {
+  const rows = []; let row = [], cur = '', q = false; t = t.replace(/^﻿/, '');
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (q) { if (c === '"') { if (t[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { row.push(cur); cur = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && t[i + 1] === '\n') i++; row.push(cur); cur = ''; if (row.some(x => x.trim())) rows.push(row); row = []; }
+    else cur += c;
+  }
+  row.push(cur); if (row.some(x => x.trim())) rows.push(row);
+  if (!rows.length) return [];
+  const head = rows[0].map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+  return rows.slice(1).map(r => Object.fromEntries(head.map((h, i) => [h, (r[i] || '').trim()])));
+}
+
+/* ========== 6. Live auction state ==========
+   The server is the only source of truth. Realtime announces a new session version and the
+   client then fetches the full state, so a lost or reordered message cannot leave stale data. */
+const Live = {
+  state: null, version: 0, offset: 0, lastOk: 0, rtOk: false, subs: new Set(), started: false, channel: null, failed: false,
+  sub(f) { this.subs.add(f); if (this.state) f(this.state, true); return () => this.subs.delete(f); },
+  now() { return Date.now() + this.offset; },
+  connected() { return navigator.onLine && Date.now() - this.lastOk < 12000 && !this.failed; },
+  async refresh() {
+    try {
+      const t0 = Date.now();
+      const { data, error } = await sb.rpc('get_auction_state');
+      if (error) throw error;
+      this.lastOk = Date.now(); this.failed = false;
+      if (!data) { this.noTournament = true; this.notify(false); return; }
+      this.noTournament = false;
+      this.offset = new Date(data.server_now).getTime() - (t0 + (Date.now() - t0) / 2);
+      if (data.session.version < this.version) return;
+      const changed = data.session.version !== this.version;
+      this.version = data.session.version; this.state = data;
+      Theme.apply(data);
+      if (!this.channel) this.listen(data.tournament.id);
+      this.notify(changed);
+    } catch { this.failed = true; this.banner(); }
+  },
+  notify(changed) { this.banner(); if (this.state) this.subs.forEach(f => f(this.state, changed)); else this.subs.forEach(f => f(null, changed)); },
+  listen(tid) {
+    const ch = sb.channel('auction-' + tid).on('postgres_changes',
+      { event: 'UPDATE', schema: 'public', table: 'auction_sessions', filter: `tournament_id=eq.${tid}` },
+      p => { if (!p.new || p.new.version > this.version) this.refresh(); });
+    this.channel = ch;
+    ch.subscribe(st => {
+      if (st === 'SUBSCRIBED') { this.rtOk = true; this.banner(); this.refresh(); }
+      else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(st)) {
+        this.rtOk = false; this.banner();
+        if (this.channel === ch) { this.channel = null; setTimeout(() => { sb.removeChannel(ch); if (!this.channel && this.state) this.listen(tid); }, 3000); }
+      }
+    });
+  },
+  start() {
+    if (this.started) return; this.started = true; this.refresh();
+    let last = 0;
+    setInterval(() => { // Polling is a safety net, faster whenever realtime is down.
+      const gap = this.rtOk ? 6000 : 2000;
+      if (Date.now() - last >= gap) { last = Date.now(); this.refresh(); } else this.banner();
+    }, 1000);
+    addEventListener('online', () => this.refresh()); addEventListener('offline', () => this.banner());
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) this.refresh(); });
+  },
+  banner() {
+    const el = $('#conn'); if (!el || !this.lastOk && !this.failed) return;
+    const c = this.connected();
+    el.className = !c ? 'on' : (!this.rtOk && this.channel !== undefined && this.state ? 'on warn' : '');
+    el.textContent = !c ? 'Connection lost. Bidding is unavailable until the live link returns.' : 'Live updates are reconnecting. The screen is refreshing every 2 seconds.';
+    document.dispatchEvent(new CustomEvent('conn-change'));
+  },
+};
+function cdRemaining(s) {
+  const se = s.session;
+  if (se.status === 'paused' && se.paused_remaining_ms !== null) return se.paused_remaining_ms / 1000;
+  if (!se.countdown_ends_at) return null;
+  return Math.max(0, (new Date(se.countdown_ends_at).getTime() - Live.now()) / 1000);
+}
+const PHASE_LABEL = { idle: 'Waiting for next player', introduction: 'Player introduction', bidding: 'Bidding open', last_call: 'Last call', closed: 'Bidding closed', sold: 'Sold', unsold: 'Unsold' };
+function statusText(s) {
+  if (s.session.status === 'paused') return 'Paused';
+  if (s.session.status === 'ended') return 'Auction ended';
+  if (s.session.status === 'not_started') return 'Not started';
+  if (s.session.phase === 'bidding' && s.current?.bid_count) return 'Live bidding';
+  return PHASE_LABEL[s.session.phase];
+}
+
+const Theme = {
+  apply(s) {
+    const st = s.settings, r = document.documentElement.style;
+    r.setProperty('--gold', st.primary_color); r.setProperty('--teal', st.accent_color); r.setProperty('--bg', st.background_color);
+    const name = s.tournament.short_name || s.tournament.name;
+    if (!document.title.startsWith(name)) document.title = name + ' Auction';
+    $$('[data-league]').forEach(e => e.textContent = s.tournament.name);
+  },
+};
+
+/* ========== 7. Sign-in ========== */
+const Auth = {
+  ctx: null, ready: false,
+  async load() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) { this.ctx = null; this.ready = true; return null; }
+    try { this.ctx = await rpc('get_my_context'); } catch { this.ctx = null; }
+    this.ready = true; return this.ctx;
+  },
+  async signOut() { await sb.auth.signOut(); this.ctx = null; location.hash = '#/login'; },
+  home() { return this.ctx?.role === 'admin' ? '#/admin/dashboard' : this.ctx?.team_id ? '#/team' : '#/login'; },
+};
+
+/* ========== 8. Router ========== */
+const routes = [];
+const route = (re, fn) => routes.push([re, fn]);
+let cleanup = null;
+async function renderRoute() {
+  const h = location.hash || '#/';
+  if (/access_token=|error_description=/.test(h)) return; // Supabase is finishing an email link.
+  if (typeof cleanup === 'function') { try { cleanup(); } catch { } } cleanup = null;
+  $('#modal-root').innerHTML = '';
+  const app = $('#app');
+  for (const [re, fn] of routes) {
+    const m = h.match(re);
+    if (m) { window.scrollTo(0, 0); cleanup = await fn(app, ...m.slice(1)); return; }
+  }
+  location.hash = '#/';
+}
+const pubShell = (body) => html`<div class="topline"><a class="brand" href="#/">${brandMark()}<span data-league>League Auction</span></a><div class="row"><a class="btn sm ghost" href="#/login">Sign in</a></div></div><div class="page">${body}</div>`;
+function brandMark() { const t = Live.state?.tournament; return t?.logo_path ? html`<img src="${mediaUrl(t.logo_path)}" alt="">` : ''; }
+/* ========== 9. Public pages ========== */
+route(/^#\/$/, (app) => {
+  const paint = (s) => {
+    if (!s) { app.innerHTML = pubShell(html`<div class="hero"><h1>League Auction</h1><p class="muted" style="margin-top:1rem">${Live.noTournament ? 'The tournament has not been set up yet. Follow the bootstrap step in the setup guide.' : 'Connecting to the league.'}</p></div>`); return; }
+    const open = s.settings.registration_open;
+    app.innerHTML = pubShell(html`<div class="hero"><div class="state">${statusText(s)}</div><h1>${s.tournament.name}</h1>
+      <p class="muted" style="margin-top:.8rem">${fmt(s.stats.registered)} players registered, ${fmt(s.stats.teams)} teams, ${fmt(s.stats.sold)} sold so far.</p></div>
+      <div class="doors">
+        <a class="door" style="--c:var(--gold)" href="#/register"><h2>Register as a player</h2><p>${open ? 'Add your details and photo. The league approves every entry.' : 'Registration is closed.'}</p></a>
+        <a class="door" style="--c:var(--teal)" href="#/login"><h2>Team or admin sign-in</h2><p>Follow your budget and squad, and bid live.</p></a>
+        <a class="door" style="--c:var(--red)" href="#/auction/live"><h2>Auction screen</h2><p>Open this on the projector or LED wall.</p></a>
+      </div>
+      <p style="margin-top:1.5rem"><button class="btn ghost hide" id="install">Install the app</button></p>`);
+    const ib = $('#install'); if (window.__installPrompt) { ib.classList.remove('hide'); ib.onclick = () => { window.__installPrompt.prompt(); window.__installPrompt = null; ib.classList.add('hide'); }; }
+  };
+  return Live.sub((s, changed) => { if (changed || !$('.hero')) paint(s); });
+});
+
+route(/^#\/register$/, (app) => {
+  let mounted = false;
+  return Live.sub((s) => {
+    if (!s || mounted) return; mounted = true;
+    const st = s.settings;
+    if (!st.registration_open) { app.innerHTML = pubShell(html`<h1>Registration is closed</h1><p class="muted" style="margin-top:1rem">Contact the league organiser if you still need to join.</p>`); return; }
+    const opts = a => a.map(x => html`<option>${x}</option>`);
+    app.innerHTML = pubShell(html`<h1 style="margin-bottom:.4rem">Player registration</h1><p class="muted" style="margin-bottom:1.4rem">${s.tournament.name}. Your phone number stays private and never appears on the auction screen.</p>
+    <form id="rf" class="stack panel" novalidate>
+      <div class="f"><b class="small muted">Player photograph</b><div id="pp">${pickerHtml(null, 'No photo yet')}</div></div>
+      <div class="fgrid">
+        <label class="f">Full name<input name="full_name" required maxlength="80" autocomplete="name"></label>
+        <label class="f">Phone number<input name="phone" required type="tel" autocomplete="tel" placeholder="+974 5555 1234"></label>
+        <label class="f">Age<input name="age" required type="number" min="5" max="100" inputmode="numeric"></label>
+        <label class="f">Primary position<select name="primary_position" required><option value="">Choose a position</option>${opts(st.positions)}</select></label>
+        <label class="f">Secondary position, if any<select name="secondary_position"><option value="">None</option>${opts(st.positions)}</select></label>
+        <label class="f">Player category<select name="category" required><option value="">Choose a category</option>${opts(st.categories)}</select></label>
+      </div>
+      <label class="f">About you <small>Optional. Up to 600 characters.</small><textarea name="description" rows="3" maxlength="600"></textarea></label>
+      <button class="btn primary" style="min-height:54px" id="rb">Submit registration</button>
+    </form>`);
+    const getPhoto = photoPicker($('#pp'));
+    $('#rf').onsubmit = e => {
+      e.preventDefault();
+      const d = formData(e.target);
+      const miss = !getPhoto() ? 'Add a player photograph.' : !d.full_name.trim() ? 'Enter your full name.' : !d.phone.trim() ? 'Enter your phone number.' : !d.age ? 'Enter your age.' : !d.primary_position ? 'Choose a primary position.' : !d.category ? 'Choose a player category.' : '';
+      if (miss) return toast(miss, true);
+      act(async () => {
+        const pre = await rpc('registration_precheck', { p_phone: d.phone });
+        if (!pre.ok) throw new Error(pre.message);
+        d.photo_path = await uploadImage(getPhoto(), 'registrations');
+        const r = await rpc('register_player', { p: d });
+        app.innerHTML = pubShell(html`<div class="hero"><div class="state">Registration received</div><h1>${r.full_name}</h1>
+          <p style="margin-top:1rem">Your player ID is <b class="num" style="font-size:1.7rem">${r.code}</b>. The league will review your entry before the auction.</p>
+          <p style="margin-top:1.4rem"><a class="btn" href="#/">Back to the league page</a></p></div>`);
+      }, $('#rb'));
+    };
+  });
+});
+
+route(/^#\/login$/, async (app) => {
+  await Auth.load();
+  if (Auth.ctx?.role === 'admin' || Auth.ctx?.team_id) { location.hash = Auth.home(); return; }
+  const signed = !!Auth.ctx;
+  app.innerHTML = pubShell(html`<div class="authbox panel stack"><h2>Sign in</h2>
+    ${signed ? html`<p class="muted">${Auth.ctx.email} is not linked to a team yet. Ask the league admin to link it.</p><button class="btn" id="so">Sign out</button>` : html`
+    <form id="lf" class="stack"><label class="f">Email<input name="email" type="email" required autocomplete="username"></label>
+    <label class="f">Password<input name="password" type="password" required autocomplete="current-password"></label>
+    <button class="btn primary" id="lb">Sign in</button></form><button class="btn ghost sm" id="fp">Forgot password</button>`}</div>`);
+  if (signed) { $('#so').onclick = () => Auth.signOut().then(renderRoute); return; }
+  $('#lf').onsubmit = e => {
+    e.preventDefault(); const d = formData(e.target);
+    act(async () => {
+      const { error } = await sb.auth.signInWithPassword({ email: d.email.trim(), password: d.password });
+      if (error) throw new Error(/invalid/i.test(error.message) ? 'That email and password do not match.' : /confirm/i.test(error.message) ? 'This account has not been confirmed. Turn off email confirmation in Supabase, or confirm the email.' : error.message);
+      await Auth.load();
+      if (location.hash === Auth.home()) renderRoute(); else if (Auth.ctx?.role === 'admin' || Auth.ctx?.team_id) location.hash = Auth.home(); else renderRoute();
+    }, $('#lb'));
+  };
+  $('#fp').onclick = async () => {
+    const email = await confirmDialog({ title: 'Reset your password', body: 'A reset link will go to this address.', confirmLabel: 'Send reset link', input: { label: 'Email' } });
+    if (!email) return;
+    act(async () => {
+      const { error } = await sb.auth.resetPasswordForEmail(email.trim(), { redirectTo: location.origin + location.pathname });
+      if (error) throw error; toast('If that account exists, a reset link is on its way.');
+    });
+  };
+});
+
+route(/^#\/reset$/, (app) => {
+  app.innerHTML = pubShell(html`<div class="authbox panel stack"><h2>Choose a new password</h2>
+    <form id="nf" class="stack"><label class="f">New password <small>At least 8 characters.</small><input name="p" type="password" minlength="8" required autocomplete="new-password"></label><button class="btn primary">Save password</button></form></div>`);
+  $('#nf').onsubmit = e => {
+    e.preventDefault();
+    act(async () => {
+      const { error } = await sb.auth.updateUser({ password: formData(e.target).p });
+      if (error) throw error; toast('Password saved.'); await Auth.load(); location.hash = Auth.home();
+    }, $('button', e.target));
+  };
+});
+
+/* ========== 10. Team dashboard ========== */
+route(/^#\/team$/, async (app) => {
+  await Auth.load();
+  if (!Auth.ctx?.team_id) { location.hash = '#/login'; return; }
+  const teamId = Auth.ctx.team_id; let dash = null, inflight = false, alive = true, shellDone = false;
+  const loadDash = debounce(async () => { try { dash = await rpc('get_team_dashboard'); if (alive) paintStatic(); } catch (e) { toast(friendlyError(e), true); } }, 200);
+
+  const paintShell = () => {
+    app.innerHTML = html`<div class="topline"><a class="brand" href="#/team" id="tb"><span>Team</span></a><div class="row"><button class="btn sm ghost" id="pw">Change password</button><button class="btn sm ghost" id="so">Sign out</button></div></div>
+    <div class="page stack"><div id="thead"></div><div id="bidbox"></div><div id="tfigs" class="stat-grid"></div><div id="annc"></div>
+    <div class="fgrid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))"><div class="panel"><h3>Squad by position</h3><div id="pos"></div></div><div class="panel"><h3>Purchase history</h3><div id="hist"></div></div></div></div>`.s;
+    $('#so').onclick = () => Auth.signOut();
+    $('#pw').onclick = async () => {
+      const p = await confirmDialog({ title: 'Change password', confirmLabel: 'Save password', input: { label: 'New password, at least 8 characters' } });
+      if (!p) return; act(async () => { const { error } = await sb.auth.updateUser({ password: p }); if (error) throw error; toast('Password saved.'); });
+    };
+    shellDone = true;
+  };
+  const paintStatic = () => {
+    if (!dash || !shellDone) return;
+    const t = dash.team;
+    $('#thead').innerHTML = html`<div class="team-head" style="--tc:${t.color}">${thumb(t.logo_path, t.name, 'av lg')}<div class="grow"><h1>${t.name}</h1><p class="muted small" data-league></p></div></div>`.s;
+    if (Live.state) $$('[data-league]').forEach(e => e.textContent = Live.state.tournament.name);
+    const n = dash.squad.length, u = unit();
+    $('#tfigs').innerHTML = html`<div class="stat" style="--c:var(--line)"><b>${fmt(dash.starting_budget)}</b><span>Starting budget, ${u}</span></div>
+      <div class="stat" style="--c:var(--line)"><b>${fmt(dash.spent)}</b><span>Points spent</span></div>
+      <div class="stat" style="--c:var(--gold)"><b>${fmt(dash.remaining)}</b><span>Remaining points</span></div>
+      <div class="stat" style="--c:var(--line)"><b>${n}</b><span>Players purchased</span></div>
+      <div class="stat" style="--c:var(--teal)"><b>${dash.squad_limit - n}</b><span>Squad slots left of ${dash.squad_limit}</span></div>`.s;
+    const pos = Object.entries(dash.positions).sort((a, b) => b[1] - a[1]);
+    $('#pos').innerHTML = pos.length ? pos.map(([k, v]) => html`<div class="row between" style="padding:.3rem 0;border-bottom:1px solid var(--line)"><span>${k}</span><b class="num" style="font-size:1.4rem">${v}</b></div>`.s).join('') : '<p class="muted">No players yet. Your first purchase will show here.</p>';
+    $('#hist').innerHTML = dash.squad.length ? dash.squad.map(p => html`<div class="row" style="padding:.4rem 0;border-bottom:1px solid var(--line);flex-wrap:nowrap">${thumb(p.photo_path, p.full_name)}<div class="grow"><b>${p.full_name}</b><div class="small muted">${p.code}, ${p.primary_position}, ${when(p.acquired_at)}</div></div><b class="num" style="font-size:1.4rem">${fmt(p.price)}</b></div>`.s).join('') : '<p class="muted">No purchases yet.</p>';
+    paintBid();
+  };
+  const bidGate = (s) => {
+    const c = s.current, ph = s.session.phase, me = s.teams.find(t => t.id === teamId);
+    if (!Live.connected()) return 'Connection lost';
+    if (s.session.status === 'paused') return 'Auction paused';
+    if (s.session.status === 'ended') return 'Auction ended';
+    if (s.session.status !== 'live') return 'Auction not started';
+    if (!c || !['bidding', 'last_call'].includes(ph)) return ph === 'introduction' ? 'Bidding opens soon' : ph === 'closed' ? 'Bidding closed' : 'Waiting for next player';
+    if (ph === 'last_call' && cdRemaining(s) <= 0) return 'Last call ended';
+    if (c.high_team_id === teamId) return 'You are leading';
+    if (me && me.remaining < c.next_bid) return 'Not enough points';
+    if (me && me.squad_count >= me.squad_limit) return 'Squad full';
+    return null;
+  };
+  let lastKey = '';
+  const paintBid = () => {
+    const s = Live.state; if (!s || !shellDone) return;
+    const c = s.current, box = $('#bidbox'), gate = bidGate(s), u = unit();
+    const key = JSON.stringify([s.session.version, gate]);
+    if (key !== lastKey) {
+      lastKey = key;
+      if (!c || ['sold', 'unsold'].includes(s.session.phase)) {
+        const r = s.last_result;
+        box.innerHTML = html`<div class="bidbox"><h2>${statusText(s)}</h2>${r ? html`<p>${r.full_name}${r.status === 'sold' ? ` went to ${r.team_name} for ${fmt(r.price)} ${u}.` : ' was not sold.'}</p>` : ''}<p class="muted">The next player will appear here as soon as the auctioneer selects one.</p></div>`.s;
+      }
+      else {
+        const lead = s.teams.find(t => t.id === c.high_team_id), lc = s.session.phase === 'last_call';
+        box.innerHTML = html`<div class="bidbox ${lc ? 'lc' : ''}"><div class="row between"><span class="tag ${lc ? 'rejected' : 'active'}" style="font-size:1rem">${statusText(s)}</span><b class="num" style="font-size:2.2rem" id="tcd"></b></div>
+          <div class="bidgrid">${c.photo_path ? html`<img class="ph" src="${mediaUrl(c.photo_path)}" alt="">` : html`<div class="ph">${initials(c.full_name)}</div>`}
+          <div><h2 style="font-size:2.3rem">${c.full_name}</h2><p class="muted">${c.code}, ${c.primary_position}${c.secondary_position ? ' / ' + c.secondary_position : ''}, ${c.category}</p></div></div>
+          <div class="figs"><div><span>Base price</span><b>${fmt(c.base_price)}</b></div><div><span>Highest bid</span><b style="color:var(--gold)">${c.high_bid === null ? 'None' : fmt(c.high_bid)}</b></div>
+          <div><span>Leading team</span><b style="font-size:1.5rem">${lead ? (lead.id === teamId ? 'Your team' : lead.name) : 'None'}</b></div><div><span>Next valid bid</span><b>${fmt(c.next_bid)}</b></div></div>
+          <button class="bigbid" id="bb" ${gate ? 'disabled' : ''}>${gate || `BID ${fmt(c.next_bid)} ${u.toUpperCase()}`}</button></div>`.s;
+        const b = $('#bb');
+        if (b) b.onclick = async () => {
+          const cur = Live.state?.current; if (inflight || !cur || bidGate(Live.state)) return;
+          inflight = true; b.disabled = true;
+          try {
+            const r = await rpc('place_bid', { p_auction_player_id: cur.auction_player_id, p_amount: cur.next_bid });
+            if (!r.ok) toast(r.message, true);
+          } catch (e) { toast(friendlyError(e), true); }
+          inflight = false; lastKey = ''; await Live.refresh(); paintBid();
+        };
+      }
+    }
+    const cd = $('#tcd'); if (cd) { const r = cdRemaining(s); cd.textContent = r === null ? '' : Math.ceil(r) + 's'; }
+  };
+  paintShell();
+  const unsub = Live.sub((s, changed) => {
+    if (!s) return;
+    if (changed || !dash) loadDash();
+    const a = s.announcements.slice(0, 3);
+    $('#annc').innerHTML = a.length ? html`<div class="panel"><h3>Announcements</h3>${a.map(x => html`<p><b>${x.title}</b>${x.body ? html`<br><span class="muted small">${x.body}</span>` : ''}</p>`)}</div>`.s : '';
+    paintBid();
+  });
+  const iv = setInterval(paintBid, 300);
+  const onConn = () => paintBid(); document.addEventListener('conn-change', onConn);
+  return () => { alive = false; unsub(); clearInterval(iv); document.removeEventListener('conn-change', onConn); };
+});
+/* ========== 11. Sound (generated, no audio files) ========== */
+const Sound = {
+  ctx: null,
+  ensure() { if (!this.ctx) { const A = window.AudioContext || window.webkitAudioContext; if (A) this.ctx = new A(); } if (this.ctx?.state === 'suspended') this.ctx.resume(); },
+  ready() { return this.ctx?.state === 'running'; },
+  tone(f, t = 0, d = .18, g = .16, type = 'triangle') {
+    if (!this.ready()) return; const c = this.ctx, o = c.createOscillator(), a = c.createGain(), at = c.currentTime + t;
+    o.type = type; o.frequency.value = f; a.gain.setValueAtTime(g, at); a.gain.exponentialRampToValueAtTime(.001, at + d);
+    o.connect(a).connect(c.destination); o.start(at); o.stop(at + d);
+  },
+  bid() { this.tone(880, 0, .12); this.tone(1320, .08, .16); },
+  beep() { this.tone(980, 0, .14, .2, 'square'); },
+  lastCall() { [660, 660, 880].forEach((f, i) => this.tone(f, i * .22, .2, .22, 'square')); },
+  sold() { [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone(f, i * .11, .4, .2)); },
+  unsold() { [392, 311].forEach((f, i) => this.tone(f, i * .2, .4, .18)); },
+  intro() { [262, 392].forEach((f, i) => this.tone(f, i * .3, .6, .14, 'sawtooth')); },
+};
+
+/* ========== 12. Projector screen ==========
+   Scenes follow server state only. SOLD appears only after a confirmed sale reaches this screen. */
+route(/^#\/auction\/live$/, (app) => {
+  app.innerHTML = `<div class="pj-root"><div class="stage" id="stage"><div class="scene" id="scene"></div><canvas id="confetti" width="1920" height="1080"></canvas><div class="statsbar" id="stats"></div><div id="pv"></div></div></div>`;
+  const stage = $('#stage'), scene = $('#scene'), statsEl = $('#stats');
+  const fit = () => { const k = Math.min(innerWidth / 1920, innerHeight / 1080); stage.style.transform = `translate(-50%,-50%) scale(${k})`; };
+  fit(); addEventListener('resize', fit);
+
+  let cur = { name: null, key: null }, introDone = null, holdUntil = 0, introTimer = null, shownBid = null, shownLead = undefined, lastSec = null, raf = null;
+  const fx = s => matchMedia('(prefers-reduced-motion:reduce)').matches ? 'low' : s.settings.animation_intensity;
+  const useSound = s => s.settings.sound_enabled;
+  const onClick = () => { Sound.ensure(); if (Live.state) paintStats(Live.state); document.documentElement.requestFullscreen?.().catch(() => { }); };
+  stage.addEventListener('click', onClick);
+
+  const logoBox = (t, cls) => t.logo_path ? html`<img class="${cls}" src="${mediaUrl(t.logo_path)}" alt="">` : html`<div class="${cls}">${t.short_name || initials(t.name)}</div>`;
+  const photo = (p, name, cls) => p ? html`<img class="${cls}" src="${mediaUrl(p)}" alt="">` : html`<div class="${cls}">${initials(name)}</div>`;
+  const u = s => s.settings.currency_label;
+
+  function paintStats(s) {
+    statsEl.style.display = s.settings.show_stats ? '' : 'none';
+    const st = s.stats, needChip = useSound(s) && !Sound.ready();
+    statsEl.innerHTML = html`<div class="s"><b>${fmt(st.registered)}</b><span>Registered</span></div><div class="s"><b>${fmt(st.sold)}</b><span>Sold</span></div><div class="s"><b>${fmt(st.unsold)}</b><span>Unsold</span></div><div class="s"><b>${fmt(st.remaining)}</b><span>Remaining</span></div><div class="s"><b>${fmt(st.teams)}</b><span>Teams</span></div>
+      <div class="prog"><div class="t"><span>Auction progress</span><b style="font-size:40px">${Math.round(st.progress)}%</b></div><div class="tr"><div class="fi" style="width:${Number(st.progress)}%"></div></div></div>`.s;
+    let chip = $('#schip');
+    if (needChip && !chip) { chip = document.createElement('div'); chip.id = 'schip'; chip.className = 'sound-chip'; chip.textContent = 'Click to enable sound and full screen'; stage.append(chip); }
+    if (!needChip && chip) chip.remove();
+  }
+  function countUp(el, to, ms) {
+    if (!el) return; const from = 0, t0 = performance.now();
+    const step = t => { const k = Math.min(1, (t - t0) / ms), e = 1 - Math.pow(1 - k, 3); el.textContent = fmt(Math.round(from + (to - from) * e)); if (k < 1) raf = requestAnimationFrame(step); };
+    raf = requestAnimationFrame(step);
+  }
+  function rollBid(el, from, to) {
+    const t0 = performance.now(), ms = 380;
+    const step = t => { const k = Math.min(1, (t - t0) / ms); el.firstChild.nodeValue = fmt(Math.round(from + (to - from) * k)); if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  }
+
+  /* Scene: player introduction */
+  function showIntro(s) {
+    const c = s.current, T = s.settings.intro_duration_seconds, unitS = T / 8, level = fx(s);
+    stage.classList.remove('lastcall');
+    scene.innerHTML = html`<div class="intro ${level === 'low' ? 'fx-low' : ''}" style="--u:${unitS}s">
+      <div class="i-logo">${s.tournament.logo_path ? html`<img src="${mediaUrl(s.tournament.logo_path)}" alt="">` : (s.tournament.short_name || initials(s.tournament.name))}</div>
+      <div class="i-next">NEXT PLAYER</div>${photo(c.photo_path, c.full_name, 'i-photo')}
+      <div class="i-name">${c.full_name}</div>
+      <div class="i-meta"><span>${c.primary_position}</span><span>${c.code}</span></div>
+      <div class="i-base"><div class="lab">Base price, ${u(s)}</div><b id="ibase">0</b></div></div>`.s;
+    if (useSound(s)) Sound.intro();
+    const baseT = setTimeout(() => countUp($('#ibase'), c.base_price, Math.min(1400, unitS * 1500)), unitS * 5000);
+    clearTimeout(introTimer);
+    introTimer = setTimeout(() => { introDone = cur.key; evaluate(); }, T * 1000);
+    return () => clearTimeout(baseT);
+  }
+
+  /* Scene: live bidding */
+  function showLive(s) {
+    const c = s.current;
+    scene.innerHTML = html`<div class="pj-top"><div class="pj-brand">${s.tournament.logo_path ? html`<img src="${mediaUrl(s.tournament.logo_path)}" alt="">` : ''}<span>${s.tournament.name}</span></div><div class="pill" id="pill"></div></div>
+    <div id="lcb"></div>
+    <div class="pj-live">
+      <div class="col">
+        <div class="card"><div class="lab">Player ID</div><div class="val sm">${c.code}</div></div>
+        <div class="card"><div class="lab">Position</div><div class="val sm">${c.primary_position}</div>${c.secondary_position ? html`<div class="lab" style="margin-top:6px">Also ${c.secondary_position}</div>` : ''}</div>
+        <div class="card"><div class="lab">Category</div><div class="val sm">${c.category}</div></div>
+        <div class="card"><div class="lab">Base price</div><div class="val"><span id="pbase">${fmt(c.base_price)}</span></div></div>
+      </div>
+      <div class="center">
+        <div><div class="bidlab" id="bidlab"></div><div class="bidnum" id="bidnum">${fmt(c.high_bid ?? c.base_price)}<small>${u(s)}</small></div></div>
+        <div class="center-low">${photo(c.photo_path, c.full_name, 'pj-photo')}
+          <div><div class="pj-name ${c.full_name.length > 20 ? 'long' : ''}">${c.full_name}</div><div class="pj-pos">${c.primary_position}</div></div>
+          <div class="ring" id="ring"><svg viewBox="0 0 120 120"><circle class="tr" cx="60" cy="60" r="52"/><circle class="fg" id="rfg" cx="60" cy="60" r="52" stroke-dasharray="326.7"/></svg><b id="rnum"></b><small id="rlab"></small></div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="card lead" id="lead"></div>
+        <div class="card" style="flex:1;min-height:0;overflow:hidden"><div class="lab" style="margin-bottom:8px">Recent bids</div><div id="acts"></div></div>
+      </div>
+    </div>`.s;
+    shownBid = c.high_bid; shownLead = undefined; patchLive(s, true);
+  }
+  function patchLive(s, first = false) {
+    const c = s.current; if (!c || !$('#bidnum')) return;
+    const ph = s.session.phase, lc = ph === 'last_call', paused = s.session.status === 'paused';
+    stage.classList.toggle('lastcall', lc && !paused);
+    const lcb = $('#lcb');
+    if (lc && !paused && !$('.lc-banner', lcb)) { lcb.innerHTML = '<div class="lc-banner">LAST CALL</div><div class="frame"></div>'; if (useSound(s)) Sound.lastCall(); }
+    if ((!lc || paused) && lcb.firstChild) lcb.innerHTML = '';
+    const pill = $('#pill'); pill.textContent = statusText(s);
+    pill.className = 'pill ' + (lc ? 'lc' : ph === 'bidding' ? 'open' : ph === 'closed' ? 'closed' : '');
+    $('#bidlab').textContent = c.high_bid === null ? (ph === 'introduction' ? 'Base price' : 'Opening at base price') : 'Current bid';
+    const num = $('#bidnum');
+    if (c.high_bid !== shownBid) {
+      const to = c.high_bid ?? c.base_price, from = shownBid ?? c.base_price; shownBid = c.high_bid;
+      rollBid(num, from, to);
+      if (fx(s) !== 'low') { num.classList.remove('bump'); void num.offsetWidth; num.classList.add('bump'); }
+      if (useSound(s)) Sound.bid();
+    }
+    const lead = s.teams.find(t => t.id === c.high_team_id);
+    if ((lead?.id ?? null) !== shownLead) {
+      shownLead = lead?.id ?? null; const le = $('#lead');
+      le.style.setProperty('--lc', lead?.color || 'var(--line)');
+      le.innerHTML = lead ? html`<div class="lab">Leading team</div>${lead.logo_path ? html`<img class="lead-logo" src="${mediaUrl(lead.logo_path)}" alt="" style="margin-top:12px">` : html`<div class="lead-logo" style="margin-top:12px">${lead.short_name || initials(lead.name)}</div>`}<div class="val">${lead.name}</div><div class="lab" style="margin-top:8px">Highest bid <b class="num" id="lhigh" style="color:var(--ink);font-size:44px"></b></div>`.s : html`<div class="lab">Leading team</div><div class="val sm" style="margin-top:12px">Waiting for the first bid</div>`.s;
+      if (!first && fx(s) !== 'low') { le.classList.remove('swap'); void le.offsetWidth; le.classList.add('swap'); }
+    }
+    const lh = $('#lhigh'); if (lh) lh.textContent = fmt(c.high_bid);
+    $('#acts').innerHTML = s.recent_bids.slice(0, 6).map(b => html`<div class="act"><span>${b.team_name}</span><b>${fmt(b.amount)}</b></div>`.s).join('') || '<div class="lab">No bids yet</div>';
+    tickRing(s);
+  }
+  function tickRing(s) {
+    const n = $('#rnum'); if (!n) return;
+    const r = cdRemaining(s), ring = $('#ring'), fg = $('#rfg'), lab = $('#rlab'), total = s.session.countdown_seconds;
+    if (r === null || !total) { ring.style.visibility = 'hidden'; return; }
+    ring.style.visibility = '';
+    const sec = Math.ceil(r); n.textContent = sec;
+    fg.style.strokeDashoffset = 326.7 * (1 - Math.min(1, r / total));
+    const lc = s.session.phase === 'last_call';
+    ring.classList.toggle('urgent', lc || sec <= 5);
+    lab.textContent = r <= 0 ? 'Awaiting auctioneer' : '';
+    if (sec !== lastSec) { lastSec = sec; if (s.session.status === 'live' && useSound(s) && sec > 0 && sec <= (lc ? 10 : 5)) Sound.beep(); }
+  }
+
+  /* Scene: result */
+  function confetti(color, count) {
+    const c = $('#confetti'), g = c.getContext('2d'); if (!count) return;
+    const cols = [color, getComputedStyle(document.documentElement).getPropertyValue('--gold').trim(), '#ffffff'];
+    const ps = Array.from({ length: count }, () => ({ x: 960 + (Math.random() - .5) * 1700, y: -30 - Math.random() * 500, v: 7 + Math.random() * 9, r: Math.random() * 6, w: 10 + Math.random() * 14, s: (Math.random() - .5) * .3, c: cols[Math.random() * 3 | 0] }));
+    const t0 = performance.now();
+    const step = t => {
+      if (t - t0 > 2800 || !$('#confetti')) { g.clearRect(0, 0, 1920, 1080); return; }
+      g.clearRect(0, 0, 1920, 1080);
+      ps.forEach(p => { p.y += p.v; p.r += p.s; g.save(); g.translate(p.x, p.y); g.rotate(p.r); g.fillStyle = p.c; g.fillRect(-p.w / 2, -5, p.w, 10); g.restore(); });
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+  function showSold(s) {
+    const r = s.last_result; stage.classList.remove('lastcall');
+    const t = s.teams.find(x => x.id === r.team_id);
+    scene.innerHTML = html`<div class="result" style="--rc:${r.team_color}">${photo(r.photo_path, r.full_name, 'r-photo')}
+      <div><div class="r-word">SOLD</div><div class="r-name">${r.full_name}</div>
+      <div class="r-team">${r.team_logo ? html`<img class="lead-logo" src="${mediaUrl(r.team_logo)}" alt="">` : html`<div class="lead-logo">${t?.short_name || initials(r.team_name)}</div>`}<b>${r.team_name}</b></div>
+      <div class="r-price">${fmt(r.price)}<small>${u(s)}</small></div>
+      <div class="r-spent">${r.team_name} has now spent ${fmt(r.team_spent)} ${u(s)}, with ${fmt(r.team_remaining)} left</div></div></div>`.s;
+    if (useSound(s)) Sound.sold();
+    confetti(r.team_color, { high: 150, medium: 70, low: 0 }[fx(s)]);
+  }
+  function showUnsold(s) {
+    const r = s.last_result; stage.classList.remove('lastcall');
+    scene.innerHTML = html`<div class="result unsold">${photo(r.photo_path, r.full_name, 'r-photo')}<div><div class="r-word">UNSOLD</div><div class="r-name">${r.full_name}</div><div class="r-spent" style="margin-top:24px">${r.code}, ${r.primary_position}</div></div></div>`.s;
+    if (useSound(s)) Sound.unsold();
+  }
+
+  /* Scene: between players, before the start and after the end */
+  function showStandby(s, ended) {
+    stage.classList.remove('lastcall');
+    const started = s.session.status !== 'not_started';
+    const rows = [...s.teams].filter(t => t.is_active).sort((a, b) => b.spent - a.spent).slice(0, 9);
+    const notes = s.announcements.filter(a => a.show_on_projector);
+    scene.innerHTML = html`<div class="standby"><div>${logoBox(s.tournament, 'logo')}<h1>${s.tournament.name}</h1>
+      <div class="sub">${ended ? 'Auction complete' : started ? 'Next player coming up' : 'Auction starts soon'}</div></div>
+      <div class="card"><table class="purse"><thead><tr><th>Team</th><th class="n">Players</th><th class="n">Spent</th><th class="n">Left</th></tr></thead>
+      <tbody>${rows.map(t => html`<tr><td>${t.name}</td><td class="n">${t.squad_count}</td><td class="n">${fmt(t.spent)}</td><td class="n">${fmt(t.remaining)}</td></tr>`)}</tbody></table>
+      ${rows.length ? '' : html`<div class="lab">Teams will appear here once they are added.</div>`}</div>
+      ${notes.length ? html`<div class="ticker"><b>${notes[0].title}</b>${notes[0].body ? ' ' + notes[0].body : ''}</div>` : ''}</div>`.s;
+  }
+
+  /* Scene selection */
+  let sceneCleanup = null;
+  function setScene(name, key, s) {
+    sceneCleanup?.(); sceneCleanup = null; cur = { name, key }; lastSec = null;
+    if (name === 'intro') sceneCleanup = showIntro(s);
+    else if (name === 'live') showLive(s);
+    else if (name === 'sold') { showSold(s); holdUntil = new Date(s.session.phase_started_at).getTime() + s.settings.sold_display_seconds * 1000; }
+    else if (name === 'unsold') { showUnsold(s); holdUntil = new Date(s.session.phase_started_at).getTime() + s.settings.sold_display_seconds * 1000; }
+    else showStandby(s, name === 'ended');
+  }
+  function evaluate() {
+    const s = Live.state; if (!s) return;
+    const se = s.session, ph = se.phase, now = Live.now();
+    const onResult = cur.name === 'sold' || cur.name === 'unsold';
+    let name, key = null;
+    // Hold a result for its configured time, even when the next player was already selected. An undo clears it at once.
+    if (onResult && now < holdUntil && !(ph === 'idle' && !s.last_result) && se.status !== 'ended') { name = cur.name; key = cur.key; }
+    else if (se.status === 'ended') name = 'ended';
+    else if (ph === 'introduction' && s.current) {
+      key = s.current.auction_player_id + ':' + s.current.round;
+      if (introDone !== key && cur.key !== key) {
+        const elapsed = (now - new Date(se.phase_started_at).getTime()) / 1000;
+        if (elapsed > s.settings.intro_duration_seconds + s.settings.sold_display_seconds + 2) introDone = key;
+      }
+      name = introDone === key ? 'live' : 'intro';
+    }
+    else if (['bidding', 'last_call', 'closed'].includes(ph) && s.current) { name = 'live'; key = s.current.auction_player_id + ':' + s.current.round; }
+    else if ((ph === 'sold' || ph === 'unsold') && s.last_result) {
+      const until = new Date(se.phase_started_at).getTime() + s.settings.sold_display_seconds * 1000;
+      if (now < until) { name = ph; key = s.last_result.auction_player_id; } else name = 'standby';
+    }
+    else name = se.status === 'not_started' ? 'standby0' : 'standby';
+    if (name !== cur.name || key !== cur.key) { if (name === 'live') clearTimeout(introTimer); setScene(name, key, s); }
+    else if (name === 'live') patchLive(s);
+    else if (name.startsWith('standby') || name === 'ended') { const sig = JSON.stringify([s.teams, s.announcements, se.status]); if (sig !== evaluate.sig) { evaluate.sig = sig; showStandby(s, name === 'ended'); } }
+    $('#pv').innerHTML = se.status === 'paused' ? '<div class="pause-veil">AUCTION PAUSED</div>' : '';
+    const warn = !Live.connected();
+    let w = $('#cwarn'); if (warn && !w) { w = document.createElement('div'); w.id = 'cwarn'; w.className = 'conn'; w.textContent = 'Connection lost, reconnecting'; stage.append(w); } if (!warn && w) w.remove();
+  }
+  const unsub = Live.sub((s) => { if (!s) { scene.innerHTML = html`<div class="standby"><div><h1>League Auction</h1><div class="sub">Waiting for setup</div></div></div>`.s; return; } paintStats(s); evaluate(); });
+  const iv = setInterval(() => { if (!Live.state) return; evaluate(); if (cur.name === 'live') tickRing(Live.state); }, 250);
+  return () => { unsub(); clearInterval(iv); clearTimeout(introTimer); cancelAnimationFrame(raf); removeEventListener('resize', fit); };
+});
+/* ========== 13. Admin shell ========== */
+const NAV = [['', [['dashboard', 'Dashboard'], ['live', 'Live control room']]],
+['Players', [['players', 'Players'], ['sold', 'Sold'], ['unsold', 'Unsold']]],
+['Teams', [['teams', 'Teams'], ['logins', 'Team logins'], ['budgets', 'Budgets and squads']]],
+['Auction', [['config', 'Auction setup'], ['history', 'Auction history'], ['announcements', 'Announcements'], ['reports', 'Reports and exports'], ['settings', 'Tournament settings']]]];
+const adminViews = {};
+route(/^#\/admin(?:\/(\w+))?$/, async (app, mod = 'dashboard') => {
+  await Auth.load();
+  if (Auth.ctx?.role !== 'admin') { location.hash = '#/login'; return; }
+  const title = NAV.flatMap(g => g[1]).find(x => x[0] === mod)?.[1] || 'Dashboard';
+  app.innerHTML = html`<div class="shell"><nav class="side" aria-label="Admin"><a class="brand" href="#/"><span data-league>League Auction</span></a>
+    ${NAV.map(([g, items]) => html`${g ? html`<div class="grp">${g}</div>` : ''}${items.map(([k, l]) => html`<a class="nav ${k === mod ? 'on' : ''}" href="#/admin/${k}">${l}</a>`)}`)}</nav>
+    <div class="main"><div class="bar-top"><h2>${title}</h2><div class="row"><span id="ast" class="tag"></span><a class="btn sm" href="#/auction/live" target="_blank" rel="noopener">Open projector</a><button class="btn sm ghost" id="so">Sign out</button></div></div>
+    <div class="content" id="c"></div></div></div>`.s;
+  $('#so').onclick = () => Auth.signOut();
+  const un1 = Live.sub(s => { if (!s) return; $('#ast').textContent = statusText(s); $('#ast').className = 'tag ' + (s.session.status === 'live' ? 'live' : s.session.status === 'paused' ? 'paused' : ''); $$('[data-league]').forEach(e => e.textContent = s.tournament.name); });
+  const inner = await (adminViews[mod] || adminViews.dashboard)($('#c'));
+  return () => { un1(); inner?.(); };
+});
+const whenState = () => new Promise(r => { if (Live.state) return r(Live.state); const un = Live.sub(s => { if (s) { setTimeout(() => un()); r(s); } }); });
+const table = (cols, rows, empty) => rows.length ? html`<div class="tbl-wrap"><table><thead><tr>${cols.map(c => html`<th class="${c.r ? 'r' : ''}">${c.h}</th>`)}</tr></thead><tbody>${rows.map(r => html`<tr>${cols.map(c => html`<td class="${c.r ? 'r' : ''}">${c.v(r)}</td>`)}</tr>`)}</tbody></table></div>` : html`<div class="panel empty">${empty}</div>`;
+const statusTag = st => html`<span class="tag ${st}">${st}</span>`;
+
+/* ---------- Dashboard ---------- */
+adminViews.dashboard = async (c) => {
+  let last = -1;
+  const paint = debounce(async (s) => {
+    const [players, squads, sales] = await Promise.all([rpc('admin_list', { p_kind: 'players' }), rpc('admin_list', { p_kind: 'squads' }), rpc('admin_list', { p_kind: 'sales' })]);
+    if (!c.isConnected) return;
+    const pending = players.filter(p => p.status === 'pending').length, st = s.stats, u = unit();
+    const spent = s.teams.reduce((a, t) => a + t.spent, 0), top = sales.filter(x => !x.undone_at).sort((a, b) => b.price - a.price)[0];
+    const maxSpend = Math.max(1, ...s.teams.map(t => t.spent));
+    const byPos = Object.entries(squads.reduce((a, q) => { (a[q.primary_position] ||= { n: 0, p: 0 }); a[q.primary_position].n++; a[q.primary_position].p += q.price; return a; }, {})).sort((a, b) => b[1].p - a[1].p);
+    const maxPos = Math.max(1, ...byPos.map(x => x[1].p));
+    c.innerHTML = html`<div class="stat-grid">
+      <a href="#/admin/players" style="text-decoration:none;color:inherit"><div class="stat" style="--c:var(--gold)"><b>${pending}</b><span>Waiting for approval</span></div></a>
+      <div class="stat"><b>${fmt(st.registered)}</b><span>Registered players</span></div><div class="stat"><b>${fmt(st.sold)}</b><span>Sold</span></div><div class="stat"><b>${fmt(st.unsold)}</b><span>Unsold</span></div><div class="stat"><b>${fmt(st.remaining)}</b><span>Remaining in pool</span></div><div class="stat"><b>${fmt(st.teams)}</b><span>Active teams</span></div><div class="stat"><b>${fmt(spent)}</b><span>Total ${u} spent</span></div>
+      <div class="stat" style="--c:var(--teal)"><b>${top ? fmt(top.price) : '-'}</b><span>${top ? 'Top buy: ' + top.full_name : 'No sales yet'}</span></div></div>
+    <div class="fgrid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+      <div class="panel"><h3>Points spent by team</h3>${s.teams.length ? [...s.teams].sort((a, b) => b.spent - a.spent).map(t => html`<div class="bar-row" title="${t.name}: ${fmt(t.spent)} ${u} spent, ${fmt(t.remaining)} left, ${t.squad_count} players"><span>${t.name}</span><div class="bar-track"><div class="bar" style="width:${t.spent / maxSpend * 100}%"></div></div><b class="num">${fmt(t.spent)}</b></div>`) : html`<p class="muted">Add teams to see their spending here.</p>`}</div>
+      <div class="panel"><h3>Points spent by position</h3>${byPos.length ? byPos.map(([k, v]) => html`<div class="bar-row" title="${k}: ${fmt(v.p)} ${u} on ${v.n} players"><span>${k}</span><div class="bar-track"><div class="bar" style="width:${v.p / maxPos * 100}%"></div></div><b class="num">${fmt(v.p)}</b></div>`) : html`<p class="muted">Sales will appear here as players are sold.</p>`}</div>
+    </div>`.s;
+  }, 250);
+  await whenState();
+  return Live.sub((s) => { if (s.session.version !== last) { last = s.session.version; paint(s); } });
+};
+
+/* ---------- Players ---------- */
+function playerForm(p, s) {
+  const st = s.settings, opt = (a, v) => a.map(x => html`<option ${x === v ? 'selected' : ''}>${x}</option>`);
+  return html`<h2>${p ? 'Edit ' + p.full_name : 'Add a player'}</h2><form class="stack" id="pf"><div id="pp">${pickerHtml(p?.photo_path, 'No photo')}</div><div class="fgrid">
+    <label class="f">Full name<input name="full_name" required value="${p?.full_name || ''}"></label>
+    <label class="f">Phone number<input name="phone" required value="${p?.phone || ''}"></label>
+    <label class="f">Age<input name="age" type="number" min="5" max="100" value="${p?.age ?? ''}"></label>
+    <label class="f">Primary position<select name="primary_position" required>${opt(st.positions, p?.primary_position)}</select></label>
+    <label class="f">Secondary position<select name="secondary_position"><option value="">None</option>${opt(st.positions, p?.secondary_position)}</select></label>
+    <label class="f">Category<select name="category" required>${opt(st.categories, p?.category)}</select></label>
+    <label class="f">Base price<input name="base_price" type="number" min="0" value="${p?.base_price ?? st.default_base_price}"></label></div>
+    <label class="f">Description<textarea name="description" rows="2" maxlength="600">${p?.description || ''}</textarea></label>
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save player</button></div></form>`;
+}
+adminViews.players = async (c) => {
+  const s = await whenState(); let all = [], mode = 'table';
+  c.innerHTML = html`<div class="row between"><div class="row grow"><input id="q" placeholder="Search name, ID or phone" style="max-width:280px"><select id="fs" style="max-width:170px"><option value="">All statuses</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="withdrawn">Withdrawn</option></select><select id="fp" style="max-width:170px"><option value="">All positions</option>${s.settings.positions.map(x => html`<option>${x}</option>`)}</select><button class="btn" id="vw">Card view</button></div>
+    <div class="row"><button class="btn primary" id="add">Add player</button><label class="btn">Import CSV<input type="file" accept=".csv,text/csv" id="imp" class="hide"></label><button class="btn" id="exp">Export CSV</button></div></div><div id="list"></div>`.s;
+  const load = async () => { all = await rpc('admin_list', { p_kind: 'players' }); paint(); };
+  const paint = () => {
+    const q = $('#q').value.toLowerCase(), fs = $('#fs').value, fp = $('#fp').value;
+    const rows = all.filter(p => (!fs || p.status === fs) && (!fp || p.primary_position === fp) && (!q || (p.full_name + p.code + (p.phone || '')).toLowerCase().includes(q)));
+    const acts = p => html`<div class="row" style="flex-wrap:nowrap;gap:.3rem">${p.status !== 'approved' ? html`<button class="btn sm good" data-a="approve" data-id="${p.id}">Approve</button>` : ''}${p.status === 'pending' ? html`<button class="btn sm" data-a="reject" data-id="${p.id}">Reject</button>` : ''}<button class="btn sm" data-a="edit" data-id="${p.id}">Edit</button>${p.status === 'approved' ? html`<button class="btn sm" data-a="withdraw" data-id="${p.id}">Withdraw</button>` : ''}<button class="btn sm ghost" data-a="del" data-id="${p.id}">Delete</button></div>`;
+    $('#list').innerHTML = mode === 'cards'
+      ? (rows.length ? html`<div class="pcards">${rows.map(p => html`<div class="pcard"><div class="ph">${p.photo_path ? html`<img src="${mediaUrl(p.photo_path)}" alt="">` : initials(p.full_name)}</div><div class="b"><b>${p.full_name}</b><span class="small muted">${p.code}, ${p.primary_position}, ${p.category}</span><span class="small">Base ${fmt(p.base_price)}</span><div>${statusTag(p.status)}</div></div></div>`)}</div>`.s : '<div class="panel empty">No players match these filters.</div>')
+      : table([{ h: '', v: p => thumb(p.photo_path, p.full_name) }, { h: 'ID', v: p => p.code }, { h: 'Name', v: p => html`<b>${p.full_name}</b>` }, { h: 'Position', v: p => p.primary_position + (p.secondary_position ? ' / ' + p.secondary_position : '') }, { h: 'Category', v: p => p.category }, { h: 'Age', v: p => p.age }, { h: 'Phone', v: p => p.phone }, { h: 'Base', r: 1, v: p => fmt(p.lot_base_price ?? p.base_price) }, { h: 'Status', v: p => statusTag(p.auction_status === 'sold' ? 'sold' : p.status) }, { h: '', v: acts }], rows, all.length ? 'No players match these filters.' : 'No players yet. Share the registration link, add a player or import a CSV.').s;
+  };
+  $('#q').oninput = paint; $('#fs').onchange = paint; $('#fp').onchange = paint;
+  $('#vw').onclick = e => { mode = mode === 'table' ? 'cards' : 'table'; e.target.textContent = mode === 'table' ? 'Card view' : 'Table view'; paint(); };
+  const edit = p => {
+    const m = openModal(playerForm(p, Live.state).s, { wide: true });
+    const get = photoPicker($('#pp', m.el));
+    $('#pf', m.el).onsubmit = e => {
+      e.preventDefault(); const d = formData(e.target); if (p) d.id = p.id;
+      act(async () => { const b = get(); if (b) d.photo_path = await uploadImage(b, 'players'); await rpc('admin_save_player', { p: d }); m.close(); toast('Player saved.'); await load(); }, $('button.primary', m.el));
+    };
+  };
+  $('#add').onclick = () => edit(null);
+  $('#list').onclick = async e => {
+    const b = e.target.closest('[data-a]'); if (!b) return; const p = all.find(x => x.id === b.dataset.id), a = b.dataset.a;
+    if (a === 'edit') return edit(p);
+    if (a === 'approve') {
+      const v = await confirmDialog({ title: 'Approve ' + p.full_name, body: 'The player joins the auction pool at this base price.', confirmLabel: 'Approve player', tone: 'good', input: { label: 'Base price', placeholder: String(p.base_price ?? Live.state.settings.default_base_price) } });
+      if (v === null) return; const n = v.trim() === '' ? (p.base_price ?? Live.state.settings.default_base_price) : Number(v);
+      if (!Number.isInteger(n) || n < 0) return toast('Enter a whole number for the base price.', true);
+      return act(async () => { await rpc('admin_set_player_status', { p_player: p.id, p_status: 'approved', p_base_price: n }); toast('Player approved.'); await load(); });
+    }
+    if (a === 'reject' || a === 'withdraw') { if (!await confirmDialog({ title: (a === 'reject' ? 'Reject ' : 'Withdraw ') + p.full_name, body: 'The player will not appear in the auction.', confirmLabel: a === 'reject' ? 'Reject player' : 'Withdraw player', tone: 'danger' })) return; return act(async () => { await rpc('admin_set_player_status', { p_player: p.id, p_status: a === 'reject' ? 'rejected' : 'withdrawn' }); await load(); }); }
+    if (a === 'del') { if (!await confirmDialog({ title: 'Delete ' + p.full_name, body: 'This permanently removes the player.', confirmLabel: 'Delete player', tone: 'danger' })) return; return act(async () => { await rpc('admin_delete_player', { p_player: p.id }); toast('Player deleted.'); await load(); }); }
+  };
+  $('#exp').onclick = () => download('players.csv', toCsv(all, [['code', 'code'], ['full_name', 'full_name'], ['phone', 'phone'], ['primary_position', 'primary_position'], ['secondary_position', 'secondary_position'], ['age', 'age'], ['category', 'category'], ['description', 'description'], ['base_price', 'base_price'], ['status', 'status'], ['auction_status', 'auction_status']]));
+  $('#imp').onchange = e => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    act(async () => {
+      const rows = parseCsv(await f.text()); if (!rows.length) throw new Error('This CSV has no player rows.');
+      const r = await rpc('admin_import_players', { p_rows: rows });
+      openModal(html`<h2>Import finished</h2><p>${r.created} players added and approved. ${r.errors.length} rows skipped.</p>${r.errors.length ? table([{ h: 'Row', v: x => x.row }, { h: 'Name', v: x => x.name }, { h: 'Problem', v: x => x.message }], r.errors, '') : ''}<p class="muted small">Columns: full_name, phone, primary_position, secondary_position, age, category, description, base_price.</p><div class="row" style="justify-content:flex-end"><button class="btn" data-close>Close</button></div>`.s, { wide: true });
+      await load();
+    });
+  };
+  await act(load);
+};
+
+/* ---------- Teams, logins, budgets ---------- */
+function teamEditor(t, s, done) {
+  const st = s.settings;
+  const m = openModal(html`<h2>${t ? 'Edit ' + t.name : 'Add a team'}</h2><form class="stack" id="tf"><div id="tp">${pickerHtml(t?.logo_path, 'No logo')}</div><div class="fgrid">
+    <label class="f">Team name<input name="name" required value="${t?.name || ''}"></label><label class="f">Short name <small>Up to 6 letters</small><input name="short_name" maxlength="6" value="${t?.short_name || ''}"></label>
+    <label class="f">Team colour<input type="color" name="color" value="${t?.color || '#FFC629'}"></label>
+    <label class="f">Starting budget<input name="starting_budget" type="number" min="0" value="${t?.starting_budget ?? st.default_budget}"></label><label class="f">Squad limit<input name="squad_limit" type="number" min="1" value="${t?.squad_limit ?? st.default_squad_limit}"></label></div>
+    <label class="check"><input type="checkbox" name="is_active" ${!t || t.is_active ? 'checked' : ''}>Team takes part in the auction</label>
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save team</button></div></form>`.s);
+  const get = photoPicker($('#tp', m.el), { type: 'image/png', out: 512 });
+  $('#tf', m.el).onsubmit = e => {
+    e.preventDefault(); const d = formData(e.target); d.is_active = !!d.is_active; if (t) d.id = t.id;
+    act(async () => { const b = get(); if (b) d.logo_path = await uploadImage(b, 'teams'); await rpc('admin_save_team', { p: d }); m.close(); toast('Team saved.'); await Live.refresh(); done?.(); }, $('button.primary', m.el));
+  };
+}
+adminViews.teams = async (c) => {
+  await whenState();
+  const un = Live.sub(s => {
+    c.innerHTML = html`<div class="row between"><p class="muted">Each team gets a login, a budget and a squad limit.</p><button class="btn primary" id="add">Add team</button></div>
+    ${table([{ h: '', v: t => thumb(t.logo_path, t.name) }, { h: 'Team', v: t => html`<b>${t.name}</b> ${t.is_active ? '' : html`<span class="tag withdrawn">inactive</span>`}` }, { h: 'Short', v: t => t.short_name }, { h: 'Colour', v: t => html`<span class="av" style="width:22px;height:22px;background:${t.color}"></span>` }, { h: 'Budget', r: 1, v: t => fmt(t.starting_budget) }, { h: 'Spent', r: 1, v: t => fmt(t.spent) }, { h: 'Left', r: 1, v: t => fmt(t.remaining) }, { h: 'Squad', r: 1, v: t => `${t.squad_count} / ${t.squad_limit}` }, { h: '', v: t => html`<div class="row" style="flex-wrap:nowrap;gap:.3rem"><button class="btn sm" data-e="${t.id}">Edit</button><button class="btn sm ghost" data-d="${t.id}">Delete</button></div>` }], s.teams, 'No teams yet. Add the first team to begin.')}`.s;
+    $('#add').onclick = () => teamEditor(null, Live.state);
+  });
+  c.onclick = async e => {
+    const id = e.target.dataset?.e, del = e.target.dataset?.d, s = Live.state;
+    if (id) teamEditor(s.teams.find(t => t.id === id), s);
+    if (del) { const t = s.teams.find(x => x.id === del); if (await confirmDialog({ title: 'Delete ' + t.name, body: 'Its logins are unlinked. Teams with auction history cannot be deleted.', confirmLabel: 'Delete team', tone: 'danger' })) act(async () => { await rpc('admin_delete_team', { p_team: del }); toast('Team deleted.'); await Live.refresh(); }); }
+  };
+  return () => { un(); c.onclick = null; };
+};
+adminViews.logins = async (c) => {
+  const s = await whenState();
+  const load = async () => {
+    const list = await rpc('admin_list_team_logins'), teams = Live.state.teams;
+    c.innerHTML = html`<form class="panel stack" id="lf"><h3>Create a team login</h3><div class="fgrid">
+      <label class="f">Team<select name="team" required>${teams.map(t => html`<option value="${t.id}">${t.name}</option>`)}</select></label>
+      <label class="f">Email<input name="email" type="email" required autocomplete="off"></label>
+      <label class="f">Password <small>At least 8 characters. Existing accounts keep theirs.</small><input name="password" type="text" minlength="8" autocomplete="off"></label></div>
+      <div><button class="btn primary" ${teams.length ? '' : 'disabled'}>Create login</button></div></form>
+    ${table([{ h: 'Team', v: l => teams.find(t => t.id === l.team_id)?.name }, { h: 'Email', v: l => l.email }, { h: 'Linked', v: l => when(l.created_at) }, { h: '', v: l => html`<div class="row" style="flex-wrap:nowrap;gap:.3rem"><button class="btn sm" data-reset="${l.email}">Send password reset</button><button class="btn sm ghost" data-un="${l.user_id}">Remove login</button></div>` }], list, 'No team logins yet.')}`.s;
+    $('#lf').onsubmit = e => {
+      e.preventDefault(); const d = formData(e.target), email = d.email.trim().toLowerCase();
+      act(async () => {
+        // A second client creates the account so the admin stays signed in. The password is never stored by this app.
+        if (d.password) {
+          const temp = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'league-temp-signup' } });
+          const { data, error } = await temp.auth.signUp({ email, password: d.password });
+          if (error && !/already/i.test(error.message)) throw error;
+          if (data?.user && !data.session && data.user.identities?.length) toast('Account created, but email confirmation is on. Turn it off in Supabase so this login works straight away.', true);
+        }
+        await rpc('admin_link_team_login', { p_team: d.team, p_email: email });
+        toast('Team login ready.'); await load();
+      }, $('button.primary', e.target));
+    };
+  };
+  c.onclick = async e => {
+    const un = e.target.dataset?.un, rs = e.target.dataset?.reset;
+    if (un && await confirmDialog({ title: 'Remove this login', body: 'The account can no longer act for the team.', confirmLabel: 'Remove login', tone: 'danger' })) act(async () => { await rpc('admin_unlink_team_login', { p_user: un }); toast('Login removed.'); await load(); });
+    if (rs) act(async () => { const { error } = await sb.auth.resetPasswordForEmail(rs, { redirectTo: location.origin + location.pathname }); if (error) throw error; toast('Reset link sent to ' + rs + '.'); });
+  };
+  await act(load);
+  return () => { c.onclick = null; };
+};
+adminViews.budgets = async (c) => {
+  await whenState();
+  const paint = s => {
+    c.innerHTML = html`<p class="muted">Points spent come only from confirmed sales and cannot be edited here. To correct one, undo the sale.</p>
+    ${table([{ h: 'Team', v: t => html`<b>${t.name}</b>` }, { h: 'Starting budget', v: t => html`<input type="number" min="${t.spent}" data-b="${t.id}" value="${t.starting_budget}" style="max-width:130px">` }, { h: 'Squad limit', v: t => html`<input type="number" min="${Math.max(1, t.squad_count)}" data-l="${t.id}" value="${t.squad_limit}" style="max-width:100px">` }, { h: 'Spent', r: 1, v: t => fmt(t.spent) }, { h: 'Left', r: 1, v: t => fmt(t.remaining) }, { h: 'Players', r: 1, v: t => t.squad_count }, { h: '', v: t => html`<button class="btn sm primary" data-s="${t.id}">Save</button>` }], s.teams, 'Add teams first.')}`.s;
+  };
+  paint(Live.state);
+  c.onclick = e => {
+    const id = e.target.dataset?.s; if (!id) return;
+    act(async () => { await rpc('admin_save_team', { p: { id, starting_budget: $(`[data-b="${id}"]`).value, squad_limit: $(`[data-l="${id}"]`).value } }); toast('Budget saved.'); await Live.refresh(); paint(Live.state); }, e.target);
+  };
+  return () => { c.onclick = null; };
+};
+
+/* ---------- Auction setup ---------- */
+adminViews.config = async (c) => {
+  const s = await whenState(), st = s.settings; let lots = [];
+  const load = async () => {
+    lots = await rpc('admin_list', { p_kind: 'lots' });
+    $('#lots').innerHTML = table([{ h: 'ID', v: l => l.code }, { h: 'Player', v: l => l.full_name }, { h: 'Status', v: l => statusTag(l.status) }, { h: 'Base price', v: l => html`<input type="number" min="0" data-base="${l.auction_player_id}" value="${l.base_price}" ${l.bid_count > 0 || l.status === 'sold' ? 'disabled' : ''} style="max-width:120px">` }, { h: 'Increment', v: l => html`<input type="number" min="1" data-inc="${l.auction_player_id}" value="${l.bid_increment}" ${l.status === 'sold' ? 'disabled' : ''} style="max-width:100px">` }, { h: '', v: l => l.status === 'sold' ? '' : html`<button class="btn sm" data-save="${l.auction_player_id}">Save</button>` }], lots, 'Approve players to fill the auction pool.').s;
+  };
+  c.innerHTML = html`<form class="panel stack" id="cf"><h3>Defaults and timers</h3><div class="fgrid">
+    <label class="f">Default base price<input type="number" min="0" name="default_base_price" value="${st.default_base_price}"></label>
+    <label class="f">Default bid increment<input type="number" min="1" name="default_increment" value="${st.default_increment}"></label>
+    <label class="f">Bid countdown, seconds <small>Restarts after each bid. 0 turns it off.</small><input type="number" min="0" max="600" name="bid_countdown_seconds" value="${st.bid_countdown_seconds}"></label>
+    <label class="f">Last call, seconds<input type="number" min="3" max="120" name="last_call_seconds" value="${st.last_call_seconds}"></label></div>
+    <div class="row"><button class="btn primary">Save setup</button><button type="button" class="btn" id="ai">Apply this increment to all waiting players</button></div></form><div id="lots"></div>`.s;
+  $('#cf').onsubmit = e => { e.preventDefault(); act(async () => { await rpc('admin_save_tournament', { p: formData(e.target) }); toast('Auction setup saved.'); await Live.refresh(); }, $('button.primary', e.target)); };
+  $('#ai').onclick = e => act(async () => { const n = await rpc('admin_apply_lot_defaults', { p_increment: Number($('[name=default_increment]').value) }); toast(`Increment applied to ${n} players.`); await load(); }, e.target);
+  $('#lots').onclick = e => {
+    const id = e.target.dataset?.save; if (!id) return;
+    const be = $(`[data-base="${id}"]`), ie = $(`[data-inc="${id}"]`);
+    act(async () => { await rpc('admin_update_lot', { p_ap: id, p_base: be.disabled ? null : Number(be.value), p_increment: Number(ie.value) }); toast('Saved.'); }, e.target);
+  };
+  await act(load);
+};
+
+/* ---------- Live control room ---------- */
+adminViews.live = async (c) => {
+  await whenState();
+  let lots = [], events = [], lastV = -1, busy = false;
+  c.innerHTML = html`<div class="room"><div class="panel"><h3>Player queue</h3><input id="lq" placeholder="Search players"><div class="lot-list" id="ll"></div></div>
+    <div class="stack"><div class="panel" id="now"></div><div class="panel"><h3>Controls</h3><div class="ctl" id="ctl"></div></div><div class="panel"><div class="row between"><h3 style="margin:0">Enter a bid for a team</h3><small class="muted">For a team without a working device</small></div><div class="row" style="margin-top:.6rem" id="ab"></div></div></div>
+    <div class="stack"><div class="panel"><h3>Incoming bids</h3><div class="feed" id="feed"></div></div><div class="panel"><h3>Team points</h3><div id="tp"></div></div></div></div>`.s;
+  const run = (fn, args, ok) => act(async () => { if (busy) return; busy = true; try { await rpc(fn, args); if (ok) toast(ok); await Live.refresh(); } finally { busy = false; } });
+  const loadSide = debounce(async () => {
+    try { [lots, events] = await Promise.all([rpc('admin_list', { p_kind: 'lots' }), rpc('admin_list', { p_kind: 'events', p_limit: 60 })]); paintSide(); } catch { }
+  }, 120);
+  const paintSide = () => {
+    if (!c.isConnected) return; const s = Live.state, can = s.session.status === 'live' && ['idle', 'sold', 'unsold'].includes(s.session.phase), q = $('#lq').value.toLowerCase();
+    const list = lots.filter(l => ['queued', 'skipped'].includes(l.status) && (!q || (l.full_name + l.code).toLowerCase().includes(q)));
+    $('#ll').innerHTML = list.map(l => html`<button class="lot" data-p="${l.auction_player_id}" ${can ? '' : 'disabled'}>${thumb(l.photo_path, l.full_name)}<span class="grow"><b>${l.full_name}</b><br><span class="small muted">${l.code}, ${l.primary_position}, base ${fmt(l.base_price)}</span></span>${l.status === 'skipped' ? html`<span class="tag skipped">skipped</span>` : ''}</button>`.s).join('') || '<p class="muted small">No players waiting. Approve players or reopen unsold ones.</p>';
+    const L = { bid_accepted: 'Bid', bid_rejected: 'Rejected', player_selected: 'Introduced', bidding_opened: 'Bidding opened', bidding_reopened: 'Bidding reopened', bidding_closed: 'Bidding closed', last_call: 'Last call', player_sold: 'Sold', player_unsold: 'Unsold', player_skipped: 'Skipped', sale_undone: 'Sale undone', auction_started: 'Auction started', auction_paused: 'Paused', auction_resumed: 'Resumed', auction_ended: 'Auction ended', player_reopened: 'Returned to queue' };
+    $('#feed').innerHTML = events.map(e => html`<div class="${e.type === 'bid_rejected' ? 'rej' : e.type === 'bid_accepted' ? 'ok' : ''}" title="${e.message || ''}"><span>${L[e.type] || e.type}${e.team_name ? ': ' + e.team_name : ''}${e.type === 'bid_rejected' && e.message ? ' (' + e.message + ')' : ''}${!e.team_name && e.full_name ? ': ' + e.full_name : ''}</span><span>${e.amount !== null ? html`<b>${fmt(e.amount)}</b> ` : ''}<small class="muted">${clock(e.created_at)}</small></span></div>`.s).join('') || '<p class="muted small">Bids appear here the moment they arrive.</p>';
+  };
+  const paint = (s) => {
+    const se = s.session, ph = se.phase, c0 = s.current, lead = c0 && s.teams.find(t => t.id === c0.high_team_id);
+    const ORDER = ['introduction', 'bidding', 'last_call', 'closed', 'sold'];
+    const LBL = { introduction: 'Introduction', bidding: 'Bidding', last_call: 'Last call', closed: 'Closed', sold: 'Sold or unsold' };
+    const idx = ORDER.indexOf(ph === 'unsold' ? 'sold' : ph);
+    $('#now').innerHTML = html`${c0 ? html`<div class="block-now">${thumb(c0.photo_path, c0.full_name, 'av lg')}<div><h2>${c0.full_name}</h2><p class="muted small">${c0.code}, ${c0.primary_position}, base ${fmt(c0.base_price)}, increment ${fmt(c0.bid_increment)}</p><p>${lead ? html`Leading: <b>${lead.name}</b>` : 'No bids yet'} <span class="muted small" id="ccd"></span></p></div><div class="bid">${fmt(c0.high_bid ?? c0.base_price)}</div></div>` : html`<h2>${statusText(s)}</h2><p class="muted">${se.status === 'not_started' ? 'Start the auction, then select the first player.' : se.status === 'ended' ? 'The auction has ended. You can start it again if players remain.' : 'Select the next player from the queue or use the buttons below.'}</p>${s.last_result ? html`<p class="small" style="margin-top:.4rem">Last result: ${s.last_result.full_name}, ${s.last_result.status}${s.last_result.team_name ? ' to ' + s.last_result.team_name + ' for ' + fmt(s.last_result.price) : ''}</p>` : ''}`}
+      <div class="phase-strip">${ORDER.map((o, i) => html`<span class="${i === idx ? 'on' : i < idx ? 'past' : ''}">${LBL[o]}</span>`)}</div>`.s;
+    const live = se.status === 'live', active = ['introduction', 'bidding', 'last_call', 'closed'].includes(ph), bidding = ph === 'bidding';
+    const B = (id, label, on, tone = '') => html`<button class="btn ${tone}" data-c="${id}" ${on ? '' : 'disabled'}>${label}</button>`;
+    $('#ctl').innerHTML = html`${se.status === 'paused' ? B('resume', 'Resume', true, 'teal') : se.status === 'live' ? B('pause', 'Pause', true) : B('start', se.status === 'ended' ? 'Restart auction' : 'Start auction', true, 'teal')}
+      ${B('next', 'Next player', live && !active, 'primary')}${B('random', 'Random player', live && !active)}
+      ${B('open', ph === 'introduction' ? 'Open bidding' : 'Reopen bidding', live && ['introduction', 'closed', 'last_call'].includes(ph), 'teal')}${B('close', 'Close bidding', live && (bidding || ph === 'last_call'))}
+      ${B('lastcall', 'Last call', live && (bidding || ph === 'closed') && !!c0?.bid_count, 'danger')}
+      ${B('sold', 'Confirm SOLD', live && ['last_call', 'closed'].includes(ph) && !!c0?.high_team_id, 'good')}${B('unsold', 'Mark UNSOLD', live && active, 'danger')}${B('skip', 'Skip player', live && active)}
+      ${B('lot', 'Change price or increment', !!c0 && active)}${B('end', 'End auction', se.status !== 'ended' && se.status !== 'not_started' && !active)}`.s;
+    const canAb = live && ['bidding', 'last_call'].includes(ph) && c0;
+    const sel = $('#abt')?.value;
+    $('#ab').innerHTML = html`<select id="abt" style="flex:1 1 170px">${s.teams.filter(t => t.is_active).map(t => html`<option value="${t.id}" ${t.id === sel ? 'selected' : ''}>${t.name} (${fmt(t.remaining)} left)</option>`)}</select><button class="btn" id="abb" ${canAb ? '' : 'disabled'}>Bid ${c0 ? fmt(c0.next_bid) : ''}</button>`.s;
+    $('#tp').innerHTML = s.teams.map(t => html`<div class="row between small" style="padding:.25rem 0;border-bottom:1px solid var(--line)"><span>${t.name} <span class="muted">${t.squad_count}/${t.squad_limit}</span></span><b class="num" style="font-size:1.15rem">${fmt(t.remaining)}</b></div>`.s).join('') || '<p class="muted small">No teams yet.</p>';
+    paintSide();
+  };
+  $('#lq').oninput = paintSide;
+  $('#ll').onclick = e => { const b = e.target.closest('[data-p]'); if (b && !b.disabled) run('admin_select_player', { p_ap: b.dataset.p }); };
+  $('#ab').onclick = e => {
+    if (e.target.id !== 'abb') return; const cur = Live.state.current; if (!cur) return;
+    act(async () => { const r = await rpc('admin_place_bid', { p_auction_player_id: cur.auction_player_id, p_team: $('#abt').value, p_amount: cur.next_bid }); if (!r.ok) toast(r.message, true); await Live.refresh(); }, e.target);
+  };
+  $('#ctl').onclick = async e => {
+    const id = e.target.dataset?.c; if (!id || e.target.disabled) return; const s = Live.state, cur = s.current, ap = cur?.auction_player_id;
+    const lead = cur && s.teams.find(t => t.id === cur.high_team_id);
+    switch (id) {
+      case 'start': return run('admin_start_auction');
+      case 'pause': return run('admin_pause_auction');
+      case 'resume': return run('admin_resume_auction');
+      case 'next': return run('admin_select_player', { p_mode: 'order' });
+      case 'random': return run('admin_select_player', { p_mode: 'random' });
+      case 'open': return run('admin_open_bidding');
+      case 'close': return run('admin_close_bidding');
+      case 'lastcall': return run('admin_last_call');
+      case 'sold': if (await confirmDialog({ title: `Sell ${cur.full_name}?`, body: `${lead?.name} pays ${fmt(cur.high_bid)} ${unit()}.`, confirmLabel: 'Confirm SOLD', tone: 'good' })) run('admin_confirm_sold', { p_ap: ap }); return;
+      case 'unsold': if (await confirmDialog({ title: `Mark ${cur.full_name} unsold?`, body: cur.bid_count ? 'The existing bids will be cancelled.' : 'You can reopen this player later.', confirmLabel: 'Mark UNSOLD', tone: 'danger' })) run('admin_mark_unsold', { p_ap: ap }); return;
+      case 'skip': if (await confirmDialog({ title: `Skip ${cur.full_name}?`, body: cur.bid_count ? 'The existing bids will be cancelled. The player stays in the queue.' : 'The player stays in the queue.', confirmLabel: 'Skip player' })) run('admin_skip_player', { p_ap: ap }); return;
+      case 'end': if (await confirmDialog({ title: 'End the auction?', body: 'Bidding stops for everyone. Players still waiting stay unassigned.', confirmLabel: 'End auction', tone: 'danger' })) run('admin_end_auction'); return;
+      case 'lot': {
+        const m = openModal(html`<h2>${cur.full_name}</h2><form class="stack" id="ltf"><div class="fgrid"><label class="f">Base price ${cur.bid_count ? html`<small>Locked after the first bid</small>` : ''}<input type="number" min="0" name="b" value="${cur.base_price}" ${cur.bid_count ? 'disabled' : ''}></label><label class="f">Bid increment<input type="number" min="1" name="i" value="${cur.bid_increment}"></label></div><div class="row" style="justify-content:flex-end"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save</button></div></form>`.s);
+        $('#ltf', m.el).onsubmit = ev => { ev.preventDefault(); const d = formData(ev.target); m.close(); run('admin_update_lot', { p_ap: ap, p_base: cur.bid_count ? null : Number(d.b), p_increment: Number(d.i) }); };
+      }
+    }
+  };
+  const iv = setInterval(() => { const s = Live.state, el = $('#ccd'); if (s && el) { const r = cdRemaining(s); el.textContent = r === null ? '' : ` ${Math.ceil(r)}s on the clock`; } }, 300);
+  const un = Live.sub(s => { if (s.session.version !== lastV) { lastV = s.session.version; paint(s); loadSide(); } });
+  return () => { un(); clearInterval(iv); };
+};
+
+/* ---------- Sold, unsold, history ---------- */
+adminViews.sold = async (c) => {
+  const load = async () => {
+    const rows = await rpc('admin_list', { p_kind: 'sales' });
+    c.innerHTML = table([{ h: '', v: r => thumb(r.photo_path, r.full_name) }, { h: 'ID', v: r => r.code }, { h: 'Player', v: r => html`<b>${r.full_name}</b>` }, { h: 'Team', v: r => r.team_name }, { h: 'Price', r: 1, v: r => fmt(r.price) }, { h: 'Time', v: r => when(r.confirmed_at) }, { h: 'Status', v: r => r.undone_at ? html`<span class="tag withdrawn" title="${r.undo_reason}">undone: ${r.undo_reason}</span>` : statusTag('sold') }, { h: '', v: r => r.undone_at ? '' : html`<button class="btn sm" data-u="${r.id}" data-n="${r.full_name}">Undo sale</button>` }], rows, 'No sales yet.').s;
+  };
+  c.onclick = async e => {
+    const id = e.target.dataset?.u; if (!id) return;
+    const reason = await confirmDialog({ title: 'Undo the sale of ' + e.target.dataset.n, body: 'Points go back to the team and the player returns to the queue. The reason is kept in the audit log.', confirmLabel: 'Undo sale', tone: 'danger', input: { label: 'Reason' } });
+    if (reason === null) return;
+    act(async () => { await rpc('admin_undo_sale', { p_sale: id, p_reason: reason }); toast('Sale undone.'); await Live.refresh(); await load(); });
+  };
+  await act(load); return () => { c.onclick = null; };
+};
+adminViews.unsold = async (c) => {
+  const load = async () => {
+    const rows = (await rpc('admin_list', { p_kind: 'lots' })).filter(l => ['unsold', 'skipped'].includes(l.status));
+    c.innerHTML = table([{ h: '', v: r => thumb(r.photo_path, r.full_name) }, { h: 'ID', v: r => r.code }, { h: 'Player', v: r => html`<b>${r.full_name}</b>` }, { h: 'Position', v: r => r.primary_position }, { h: 'Base', r: 1, v: r => fmt(r.base_price) }, { h: 'Status', v: r => statusTag(r.status) }, { h: '', v: r => html`<button class="btn sm" data-r="${r.auction_player_id}">Return to queue</button>` }], rows, 'No unsold players.').s;
+  };
+  c.onclick = e => { const id = e.target.dataset?.r; if (id) act(async () => { await rpc('admin_reopen_unsold', { p_ap: id }); toast('Player returned to the queue.'); await load(); }); };
+  await act(load); return () => { c.onclick = null; };
+};
+adminViews.history = async (c) => {
+  const [ev, au] = await Promise.all([rpc('admin_list', { p_kind: 'events', p_limit: 300 }), rpc('admin_list', { p_kind: 'audit', p_limit: 200 })]);
+  c.innerHTML = html`<h3>Auction events</h3>${table([{ h: 'Time', v: e => when(e.created_at) }, { h: 'Event', v: e => e.type.replace(/_/g, ' ') }, { h: 'Player', v: e => e.full_name }, { h: 'Team', v: e => e.team_name }, { h: 'Points', r: 1, v: e => e.amount === null ? '' : fmt(e.amount) }, { h: 'Note', v: e => e.message }], ev, 'Nothing has happened yet.')}
+    <h3>Admin audit log</h3>${table([{ h: 'Time', v: e => when(e.created_at) }, { h: 'Admin', v: e => e.actor_email }, { h: 'Action', v: e => e.action }, { h: 'Reason', v: e => e.reason }], au, 'No admin actions yet.')}`.s;
+};
+
+/* ---------- Announcements ---------- */
+adminViews.announcements = async (c) => {
+  let list = [];
+  const load = async () => {
+    list = await rpc('admin_list', { p_kind: 'announcements' });
+    c.innerHTML = html`<form class="panel stack" id="af"><h3>Post an announcement</h3><label class="f">Title<input name="title" required maxlength="120"></label><label class="f">Details<textarea name="body" rows="2" maxlength="800"></textarea></label>
+      <label class="check"><input type="checkbox" name="show_on_projector">Also show on the projector between players</label><div><button class="btn primary">Post announcement</button></div></form>
+      ${table([{ h: 'Title', v: a => html`<b>${a.title}</b><br><span class="small muted">${a.body}</span>` }, { h: 'Projector', v: a => a.show_on_projector ? 'Yes' : 'No' }, { h: 'Posted', v: a => when(a.created_at) }, { h: '', v: a => html`<button class="btn sm ghost" data-d="${a.id}">Delete</button>` }], list, 'No announcements yet.')}`.s;
+    $('#af').onsubmit = e => { e.preventDefault(); const d = formData(e.target); d.show_on_projector = !!d.show_on_projector; act(async () => { await rpc('admin_save_announcement', { p: d }); toast('Announcement posted.'); await load(); }, $('button.primary', e.target)); };
+  };
+  c.onclick = e => { const id = e.target.dataset?.d; if (id) act(async () => { await rpc('admin_delete_announcement', { p_id: id }); await load(); }); };
+  await act(load); return () => { c.onclick = null; };
+};
+
+/* ---------- Reports ---------- */
+adminViews.reports = async (c) => {
+  await whenState();
+  const R = [
+    ['Players with phone numbers', 'Private. Includes contact details.', async () => toCsv(await rpc('admin_list', { p_kind: 'players' }), [['code', 'code'], ['name', 'full_name'], ['phone', 'phone'], ['position', 'primary_position'], ['secondary', 'secondary_position'], ['age', 'age'], ['category', 'category'], ['status', 'status'], ['auction_status', 'auction_status'], ['base_price', 'lot_base_price']]), 'players'],
+    ['Sold players', 'Every sale, including undone ones and their reasons.', async () => toCsv(await rpc('admin_list', { p_kind: 'sales' }), [['code', 'code'], ['player', 'full_name'], ['team', 'team_name'], ['price', 'price'], ['confirmed_at', 'confirmed_at'], ['undone_at', 'undone_at'], ['undo_reason', 'undo_reason']]), 'sold'],
+    ['Unsold players', 'Players marked unsold or skipped.', async () => toCsv((await rpc('admin_list', { p_kind: 'lots' })).filter(l => ['unsold', 'skipped'].includes(l.status)), [['code', 'code'], ['player', 'full_name'], ['position', 'primary_position'], ['base_price', 'base_price'], ['status', 'status']]), 'unsold'],
+    ['Team squads', 'Final squads, one row per player.', async () => toCsv(await rpc('admin_list', { p_kind: 'squads' }), [['team', 'team_name'], ['code', 'code'], ['player', 'full_name'], ['position', 'primary_position'], ['category', 'category'], ['price', 'price']]), 'squads'],
+    ['Team budgets', 'Budget, spend and squad size per team.', async () => toCsv(Live.state.teams, [['team', 'name'], ['starting_budget', 'starting_budget'], ['spent', 'spent'], ['remaining', 'remaining'], ['squad_count', 'squad_count'], ['squad_limit', 'squad_limit']]), 'budgets'],
+    ['All bids', 'Every accepted bid, including cancelled ones.', async () => toCsv(await rpc('admin_list', { p_kind: 'bids', p_limit: 100000 }), [['time', 'created_at'], ['code', 'code'], ['player', 'full_name'], ['team', 'team_name'], ['amount', 'amount'], ['round', 'round'], ['source', 'source'], ['cancelled_at', 'voided_at']]), 'bids'],
+    ['Admin audit log', 'Who changed what, and when.', async () => toCsv(await rpc('admin_list', { p_kind: 'audit', p_limit: 100000 }), [['time', 'created_at'], ['admin', 'actor_email'], ['action', 'action'], ['type', 'entity_type'], ['id', 'entity_id'], ['reason', 'reason']]), 'audit'],
+  ];
+  c.innerHTML = html`<div class="doors" style="margin:0">${R.map((r, i) => html`<div class="panel stack"><div><h3 style="margin-bottom:.2rem">${r[0]}</h3><p class="muted small">${r[1]}</p></div><div><button class="btn" data-i="${i}">Download CSV</button></div></div>`)}</div>`.s;
+  c.onclick = e => { const i = e.target.dataset?.i; if (i !== undefined) act(async () => download(R[i][3] + '.csv', await R[i][2]()), e.target); };
+  return () => { c.onclick = null; };
+};
+
+/* ---------- Settings ---------- */
+adminViews.settings = async (c) => {
+  const s = await whenState(), st = s.settings, t = s.tournament;
+  c.innerHTML = html`<form id="sf" class="stack">
+    <div class="panel stack"><h3>Branding</h3><div id="lg">${pickerHtml(t.logo_path, 'No logo')}</div><div class="fgrid">
+      <label class="f">Tournament name<input name="name" required value="${t.name}"></label><label class="f">Short name<input name="short_name" maxlength="12" value="${t.short_name || ''}"></label>
+      <label class="f">Points label<input name="currency_label" maxlength="8" value="${st.currency_label}"></label></div>
+      <div class="fgrid"><label class="f">Primary colour<input type="color" name="primary_color" value="${st.primary_color}"></label><label class="f">Accent colour<input type="color" name="accent_color" value="${st.accent_color}"></label><label class="f">Background colour<input type="color" name="background_color" value="${st.background_color}"></label></div></div>
+    <div class="panel stack"><h3>Projector</h3><div class="fgrid">
+      <label class="f">Animation intensity<select name="animation_intensity">${['high', 'medium', 'low'].map(x => html`<option ${x === st.animation_intensity ? 'selected' : ''}>${x}</option>`)}</select></label>
+      <label class="f">Player introduction, seconds<input type="number" min="3" max="30" name="intro_duration_seconds" value="${st.intro_duration_seconds}"></label>
+      <label class="f">Last call, seconds<input type="number" min="3" max="120" name="last_call_seconds" value="${st.last_call_seconds}"></label>
+      <label class="f">SOLD display, seconds<input type="number" min="2" max="60" name="sold_display_seconds" value="${st.sold_display_seconds}"></label></div>
+      <label class="check"><input type="checkbox" name="sound_enabled" ${st.sound_enabled ? 'checked' : ''}>Sound effects</label><label class="check"><input type="checkbox" name="show_stats" ${st.show_stats ? 'checked' : ''}>Statistics bar</label></div>
+    <div class="panel stack"><h3>Registration and teams</h3><label class="check"><input type="checkbox" name="registration_open" ${st.registration_open ? 'checked' : ''}>Registration is open</label><div class="fgrid">
+      <label class="f">Positions <small>Comma separated</small><input name="positions" value="${st.positions.join(', ')}"></label><label class="f">Player categories <small>Comma separated</small><input name="categories" value="${st.categories.join(', ')}"></label>
+      <label class="f">Default team budget<input type="number" min="0" name="default_budget" value="${st.default_budget}"></label><label class="f">Default squad limit<input type="number" min="1" name="default_squad_limit" value="${st.default_squad_limit}"></label></div></div>
+    <div><button class="btn primary" style="min-height:54px">Save settings</button></div></form>`.s;
+  const get = photoPicker($('#lg'), { type: 'image/png', out: 512 });
+  $('#sf').onsubmit = e => {
+    e.preventDefault(); const d = formData(e.target);
+    ['sound_enabled', 'show_stats', 'registration_open'].forEach(k => d[k] = !!d[k]);
+    d.positions = d.positions.split(',').map(x => x.trim()).filter(Boolean); d.categories = d.categories.split(',').map(x => x.trim()).filter(Boolean);
+    act(async () => { const b = get(); if (b) d.logo_path = await uploadImage(b, 'branding'); await rpc('admin_save_tournament', { p: d }); toast('Settings saved.'); await Live.refresh(); }, $('button.primary', e.target));
+  };
+};
+
+/* ========== 14. Start-up ========== */
+let sb = null;
+function startApp() {
+  if (/^YOUR_/.test(CONFIG.SUPABASE_URL) || /^YOUR_/.test(CONFIG.SUPABASE_KEY)) {
+    $('#app').innerHTML = html`<div class="page"><div class="hero"><div class="state">Setup needed</div><h1>Connect your Supabase project</h1><p class="muted" style="margin-top:1rem">Open index.html, find the CONFIG block near the top of the script, and paste your Supabase project URL and publishable key. The README lists every step.</p></div></div>`.s;
+    return;
+  }
+  if (!window.supabase) { $('#app').innerHTML = html`<div class="page"><div class="hero"><h1>Connection needed</h1><p class="muted" style="margin-top:1rem">The app could not load. Connect to the internet and reload this page.</p></div></div>`.s; return; }
+  sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' } });
+  sb.auth.onAuthStateChange((ev) => {
+    if (ev === 'PASSWORD_RECOVERY') setTimeout(() => { location.hash = '#/reset'; }, 0);
+  });
+  addEventListener('hashchange', renderRoute);
+  addEventListener('beforeinstallprompt', e => { e.preventDefault(); window.__installPrompt = e; });
+  Live.start();
+  renderRoute();
+  if ('serviceWorker' in navigator && isSecureContext) navigator.serviceWorker.register('./sw.js').catch(() => { });
+}
+startApp();
+</script>
+</body>
+</html>

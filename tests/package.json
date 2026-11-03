@@ -1,0 +1,2 @@
+{"name":"league-auction-tests","private":true,"scripts":{"test:db":"node db.test.js","test:e2e":"node e2e.test.js"},
+ "devDependencies":{"embedded-postgres":"*","pg":"*","ws":"*","playwright":"*","@fontsource/big-shoulders-display":"*","@fontsource/figtree":"*"}}
