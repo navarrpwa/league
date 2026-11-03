@@ -1,12 +1,34 @@
 -- League Auction: tables, constraints and indexes.
 create schema if not exists private;
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
 
+-- Logins live here, not in Supabase Auth. Passwords are stored only as bcrypt hashes.
 create table public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  email text,
+  id uuid primary key default gen_random_uuid(),
+  username text not null unique check (username ~ '^[a-z0-9._-]{3,40}$'),
+  password_hash text not null,
   display_name text,
-  role text not null default 'viewer' check (role in ('admin','team','viewer')),
+  role text not null default 'team' check (role in ('admin','team')),
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Only a hash of each session token is stored, so a database leak does not expose live sessions.
+create table public.user_sessions (
+  token_hash text primary key,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  expires_at timestamptz not null,
   created_at timestamptz not null default now()
+);
+create index user_sessions_user_idx on public.user_sessions (user_id);
+
+create table public.login_attempts (
+  username text primary key,
+  failed_count integer not null default 0,
+  locked_until timestamptz,
+  updated_at timestamptz not null default now()
 );
 
 create table public.tournaments (
@@ -58,7 +80,7 @@ create table public.players (
   status text not null default 'pending' check (status in ('pending','approved','rejected','withdrawn')),
   base_price integer check (base_price >= 0),
   approved_at timestamptz,
-  approved_by uuid references auth.users(id) on delete set null,
+  approved_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (tournament_id, code)
@@ -90,7 +112,7 @@ create table public.teams (
 create table public.team_memberships (
   id uuid primary key default gen_random_uuid(),
   team_id uuid not null references public.teams(id) on delete cascade,
-  user_id uuid not null unique references auth.users(id) on delete cascade,
+  user_id uuid not null unique references public.profiles(id) on delete cascade,
   created_at timestamptz not null default now()
 );
 create index team_memberships_team_idx on public.team_memberships (team_id);
@@ -153,7 +175,7 @@ create table public.bids (
   team_id uuid not null references public.teams(id),
   amount integer not null check (amount >= 0),
   round integer not null,
-  placed_by uuid references auth.users(id) on delete set null,
+  placed_by uuid references public.profiles(id) on delete set null,
   source text not null default 'team' check (source in ('team','admin')),
   voided_at timestamptz,
   created_at timestamptz not null default now()
@@ -172,10 +194,10 @@ create table public.player_sales (
   team_id uuid not null references public.teams(id),
   price integer not null check (price >= 0),
   winning_bid_id uuid references public.bids(id),
-  confirmed_by uuid references auth.users(id) on delete set null,
+  confirmed_by uuid references public.profiles(id) on delete set null,
   confirmed_at timestamptz not null default now(),
   undone_at timestamptz,
-  undone_by uuid references auth.users(id) on delete set null,
+  undone_by uuid references public.profiles(id) on delete set null,
   undo_reason text
 );
 -- A player can have only one standing sale.
@@ -229,7 +251,7 @@ create table public.announcements (
   body text check (length(body) <= 800),
   is_published boolean not null default true,
   show_on_projector boolean not null default false,
-  created_by uuid references auth.users(id) on delete set null,
+  created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

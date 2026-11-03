@@ -1,12 +1,34 @@
 -- League Auction: tables, constraints and indexes.
 create schema if not exists private;
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
 
+-- Logins live here, not in Supabase Auth. Passwords are stored only as bcrypt hashes.
 create table public.profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
-  email text,
+  id uuid primary key default gen_random_uuid(),
+  username text not null unique check (username ~ '^[a-z0-9._-]{3,40}$'),
+  password_hash text not null,
   display_name text,
-  role text not null default 'viewer' check (role in ('admin','team','viewer')),
+  role text not null default 'team' check (role in ('admin','team')),
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- Only a hash of each session token is stored, so a database leak does not expose live sessions.
+create table public.user_sessions (
+  token_hash text primary key,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  expires_at timestamptz not null,
   created_at timestamptz not null default now()
+);
+create index user_sessions_user_idx on public.user_sessions (user_id);
+
+create table public.login_attempts (
+  username text primary key,
+  failed_count integer not null default 0,
+  locked_until timestamptz,
+  updated_at timestamptz not null default now()
 );
 
 create table public.tournaments (
@@ -58,7 +80,7 @@ create table public.players (
   status text not null default 'pending' check (status in ('pending','approved','rejected','withdrawn')),
   base_price integer check (base_price >= 0),
   approved_at timestamptz,
-  approved_by uuid references auth.users(id) on delete set null,
+  approved_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (tournament_id, code)
@@ -90,7 +112,7 @@ create table public.teams (
 create table public.team_memberships (
   id uuid primary key default gen_random_uuid(),
   team_id uuid not null references public.teams(id) on delete cascade,
-  user_id uuid not null unique references auth.users(id) on delete cascade,
+  user_id uuid not null unique references public.profiles(id) on delete cascade,
   created_at timestamptz not null default now()
 );
 create index team_memberships_team_idx on public.team_memberships (team_id);
@@ -153,7 +175,7 @@ create table public.bids (
   team_id uuid not null references public.teams(id),
   amount integer not null check (amount >= 0),
   round integer not null,
-  placed_by uuid references auth.users(id) on delete set null,
+  placed_by uuid references public.profiles(id) on delete set null,
   source text not null default 'team' check (source in ('team','admin')),
   voided_at timestamptz,
   created_at timestamptz not null default now()
@@ -172,10 +194,10 @@ create table public.player_sales (
   team_id uuid not null references public.teams(id),
   price integer not null check (price >= 0),
   winning_bid_id uuid references public.bids(id),
-  confirmed_by uuid references auth.users(id) on delete set null,
+  confirmed_by uuid references public.profiles(id) on delete set null,
   confirmed_at timestamptz not null default now(),
   undone_at timestamptz,
-  undone_by uuid references auth.users(id) on delete set null,
+  undone_by uuid references public.profiles(id) on delete set null,
   undo_reason text
 );
 -- A player can have only one standing sale.
@@ -229,7 +251,7 @@ create table public.announcements (
   body text check (length(body) <= 800),
   is_published boolean not null default true,
   show_on_projector boolean not null default false,
-  created_by uuid references auth.users(id) on delete set null,
+  created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -237,14 +259,22 @@ create index announcements_recent_idx on public.announcements (tournament_id, cr
 -- League Auction: all writes go through these functions. Clients have no direct write access.
 
 ---------------------------------------------------------------- helpers
+-- The signed-in user comes from the session token the app sends in the x-league-session header.
+create function private.uid() returns uuid
+language sql stable security definer set search_path = public, pg_temp as $$
+  select s.user_id from public.user_sessions s join public.profiles p on p.id = s.user_id
+  where s.token_hash = encode(sha256(convert_to((nullif(current_setting('request.headers', true), '')::json)->>'x-league-session', 'utf8')), 'hex')
+    and s.expires_at > now() and p.is_active;
+$$;
+
 create function private.is_admin() returns boolean
 language sql stable security definer set search_path = public, pg_temp as $$
-  select exists (select 1 from public.profiles where id = auth.uid() and role = 'admin');
+  select exists (select 1 from public.profiles where id = private.uid() and role = 'admin');
 $$;
 
 create function private.current_team() returns uuid
 language sql stable security definer set search_path = public, pg_temp as $$
-  select team_id from public.team_memberships where user_id = auth.uid();
+  select team_id from public.team_memberships where user_id = private.uid();
 $$;
 
 create function private.require_admin() returns void
@@ -271,13 +301,13 @@ end $$;
 create function private.audit(p_action text, p_type text, p_id text, p_before jsonb, p_after jsonb, p_reason text default null) returns void
 language sql security definer set search_path = public, pg_temp as $$
   insert into public.admin_audit_logs (tournament_id, actor_id, action, entity_type, entity_id, before_data, after_data, reason)
-  values (private.active_tournament(), auth.uid(), p_action, p_type, p_id, p_before, p_after, p_reason);
+  values (private.active_tournament(), private.uid(), p_action, p_type, p_id, p_before, p_after, p_reason);
 $$;
 
 create function private.log_event(p_session uuid, p_type text, p_ap uuid, p_team uuid, p_amount integer, p_message text, p_payload jsonb default '{}') returns void
 language sql security definer set search_path = public, pg_temp as $$
   insert into public.auction_events (session_id, type, auction_player_id, team_id, amount, message, payload, actor_id)
-  values (p_session, p_type, p_ap, p_team, p_amount, p_message, coalesce(p_payload, '{}'), auth.uid());
+  values (p_session, p_type, p_ap, p_team, p_amount, p_message, coalesce(p_payload, '{}'), private.uid());
 $$;
 
 -- Every change that clients must see bumps the version; realtime carries that bump.
@@ -377,7 +407,7 @@ begin
   values (p_t, 'P-' || lpad(seq::text, 4, '0'), v_name, nullif(p->>'photo_path', ''), v_pos, v_sec,
     nullif(p->>'age', '')::integer, v_cat, nullif(trim(coalesce(p->>'description', '')), ''), p_status,
     nullif(p->>'base_price', '')::integer,
-    case when p_status = 'approved' then now() end, case when p_status = 'approved' then auth.uid() end)
+    case when p_status = 'approved' then now() end, case when p_status = 'approved' then private.uid() end)
   returning * into r;
   insert into public.player_contacts (player_id, tournament_id, phone, phone_normalized) values (r.id, p_t, trim(p->>'phone'), norm);
   if p_status = 'approved' then perform private.enroll_player(r); end if;
@@ -385,31 +415,85 @@ begin
 end $$;
 
 ---------------------------------------------------------------- setup (SQL editor only)
-create function private.bootstrap_admin(p_email text, p_tournament_name text default 'League Auction') returns text
-language plpgsql security definer set search_path = public, pg_temp as $$
-declare u uuid; t uuid;
+create function private.check_credentials(p_username text, p_password text) returns text
+language plpgsql immutable as $$
+declare v text := lower(trim(coalesce(p_username, '')));
 begin
-  select id into u from auth.users where lower(email) = lower(trim(p_email));
-  if u is null then raise exception 'No user with email %. Create the user in Authentication first.', p_email; end if;
-  insert into public.profiles (id, email, role) values (u, lower(trim(p_email)), 'admin')
-    on conflict (id) do update set role = 'admin';
+  if v !~ '^[a-z0-9._-]{3,40}$' then raise exception 'Usernames need 3 to 40 characters: letters, numbers, dots, dashes or underscores.'; end if;
+  if length(coalesce(p_password, '')) < 8 then raise exception 'Passwords need at least 8 characters.'; end if;
+  return v;
+end $$;
+
+create function private.hash_password(p text) returns text
+language sql volatile as $$ select extensions.crypt(p, extensions.gen_salt('bf', 10)); $$;
+
+-- Run from the SQL editor. Creates an admin, or resets that admin's password if the username exists.
+create function private.bootstrap_admin(p_username text, p_password text, p_tournament_name text default 'League Auction') returns text
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare v text := private.check_credentials(p_username, p_password); t uuid; u uuid;
+begin
+  insert into public.profiles (username, password_hash, role) values (v, private.hash_password(p_password), 'admin')
+    on conflict (username) do update set password_hash = excluded.password_hash, role = 'admin', is_active = true, updated_at = now()
+    returning id into u;
+  delete from public.user_sessions where user_id = u;
+  delete from public.team_memberships where user_id = u;
+  delete from public.login_attempts where username = v;
   t := private.active_tournament();
   if t is null then
     insert into public.tournaments (name) values (p_tournament_name) returning id into t;
     insert into public.tournament_settings (tournament_id) values (t);
     insert into public.auction_sessions (tournament_id) values (t);
   end if;
-  return 'Admin ready: ' || p_email;
+  return 'Admin ready: ' || v;
 end $$;
 
-create function private.handle_new_user() returns trigger
+---------------------------------------------------------------- sign-in
+create function public.login(p_username text, p_password text) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
+declare v text := lower(trim(coalesce(p_username, ''))); u public.profiles; a public.login_attempts; tok text; ok boolean;
 begin
-  insert into public.profiles (id, email) values (new.id, lower(new.email)) on conflict (id) do nothing;
-  return new;
+  select * into a from login_attempts where username = v;
+  if a.locked_until > now() then
+    return jsonb_build_object('ok', false, 'message', 'Too many failed attempts. Try again in a minute.');
+  end if;
+  select * into u from profiles where username = v and is_active;
+  -- A dummy hash keeps the response time the same for unknown usernames.
+  ok := extensions.crypt(coalesce(p_password, ''), coalesce(u.password_hash, '$2a$10$abcdefghijklmnopqrstuuH4yXbCwUmXRaAl7GPy2SvWhAoEZWxG6')) = u.password_hash;
+  if ok is not true then
+    if u.id is not null then
+      insert into login_attempts (username, failed_count, updated_at) values (v, 1, now())
+      on conflict (username) do update set
+        failed_count = case when login_attempts.failed_count >= 9 then 0 else login_attempts.failed_count + 1 end,
+        locked_until = case when login_attempts.failed_count >= 9 then now() + interval '1 minute' else null end,
+        updated_at = now();
+    end if;
+    return jsonb_build_object('ok', false, 'message', 'That username and password do not match.');
+  end if;
+  delete from login_attempts where username = v;
+  delete from user_sessions where expires_at < now();
+  tok := encode(extensions.gen_random_bytes(32), 'hex');
+  insert into user_sessions (token_hash, user_id, expires_at)
+  values (encode(sha256(convert_to(tok, 'utf8')), 'hex'), u.id, now() + interval '30 days');
+  return jsonb_build_object('ok', true, 'token', tok);
 end $$;
-create trigger on_auth_user_created after insert on auth.users
-  for each row execute function private.handle_new_user();
+
+create function public.logout() returns void
+language sql security definer set search_path = public, pg_temp as $$
+  delete from public.user_sessions where token_hash = encode(sha256(convert_to((nullif(current_setting('request.headers', true), '')::json)->>'x-league-session', 'utf8')), 'hex');
+$$;
+
+create function public.change_password(p_current text, p_new text) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare u public.profiles;
+begin
+  select * into u from profiles where id = private.uid();
+  if not found then raise exception 'Sign in again.' using errcode = '42501'; end if;
+  if extensions.crypt(coalesce(p_current, ''), u.password_hash) <> u.password_hash then raise exception 'The current password is wrong.'; end if;
+  perform private.check_credentials(u.username, p_new);
+  update profiles set password_hash = private.hash_password(p_new), updated_at = now() where id = u.id;
+  -- Every other device is signed out.
+  delete from user_sessions where user_id = u.id and token_hash <> encode(sha256(convert_to((nullif(current_setting('request.headers', true), '')::json)->>'x-league-session', 'utf8')), 'hex');
+end $$;
 
 create function private.block_audit_change() returns trigger language plpgsql as $$
 begin raise exception 'Audit logs are append-only'; end $$;
@@ -419,9 +503,9 @@ create trigger audit_logs_immutable before update or delete on public.admin_audi
 ---------------------------------------------------------------- public reads
 create function public.get_my_context() returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
-  select jsonb_build_object('user_id', p.id, 'email', p.email, 'display_name', p.display_name,
+  select jsonb_build_object('user_id', p.id, 'username', p.username, 'display_name', p.display_name,
     'role', p.role, 'team_id', (select m.team_id from team_memberships m where m.user_id = p.id))
-  from profiles p where p.id = auth.uid();
+  from profiles p where p.id = private.uid() and p.is_active;
 $$;
 
 create function public.get_auction_state() returns jsonb
@@ -606,7 +690,7 @@ begin
   if ap.status = 'active' and p_status <> 'approved' then raise exception 'This player is on the block. Skip or close the lot first.'; end if;
   update players set status = p_status, base_price = coalesce(p_base_price, base_price), updated_at = now(),
     approved_at = case when p_status = 'approved' then now() else approved_at end,
-    approved_by = case when p_status = 'approved' then auth.uid() else approved_by end
+    approved_by = case when p_status = 'approved' then private.uid() else approved_by end
   where id = p_player returning * into r;
   if p_status = 'approved' then
     perform private.enroll_player(r);
@@ -709,7 +793,7 @@ begin
   if exists (select 1 from bids where team_id = p_team) or exists (select 1 from player_sales where team_id = p_team) then
     raise exception 'This team has auction history. Mark it inactive instead.';
   end if;
-  update profiles set role = 'viewer' where id in (select user_id from team_memberships where team_id = p_team) and role = 'team';
+  delete from profiles where id in (select user_id from team_memberships where team_id = p_team) and role = 'team';
   delete from teams where id = p_team;
   perform private.audit('team.delete', 'team', p_team::text, to_jsonb(b), null);
   perform private.touch_session(t);
@@ -719,37 +803,47 @@ create function public.admin_list_team_logins() returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 begin
   perform private.require_admin();
-  return coalesce((select jsonb_agg(jsonb_build_object('user_id', m.user_id, 'team_id', m.team_id, 'email', p.email, 'created_at', m.created_at) order by m.created_at)
+  return coalesce((select jsonb_agg(jsonb_build_object('user_id', m.user_id, 'team_id', m.team_id, 'username', p.username, 'created_at', m.created_at) order by m.created_at)
     from team_memberships m join profiles p on p.id = m.user_id join teams t on t.id = m.team_id where t.tournament_id = private.active_tournament()), '[]'::jsonb);
 end $$;
 
-create function public.admin_link_team_login(p_team uuid, p_email text) returns jsonb
+create function public.admin_create_team_login(p_team uuid, p_username text, p_password text) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
-declare u uuid; v_role text;
+declare u uuid; v text;
 begin
   perform private.require_admin();
+  v := private.check_credentials(p_username, p_password);
   if not exists (select 1 from teams where id = p_team and tournament_id = private.require_tournament()) then raise exception 'Team not found.'; end if;
-  select id into u from auth.users where lower(email) = lower(trim(p_email));
-  if u is null then raise exception 'No account exists for %.', p_email; end if;
-  select role into v_role from profiles where id = u;
-  if v_role = 'admin' then raise exception 'An admin account cannot also be a team login.'; end if;
-  if exists (select 1 from team_memberships where user_id = u and team_id <> p_team) then
-    raise exception 'This email is already linked to another team.';
-  end if;
-  insert into team_memberships (team_id, user_id) values (p_team, u) on conflict (user_id) do nothing;
-  update profiles set role = 'team' where id = u;
-  perform private.audit('team_login.link', 'team', p_team::text, null, jsonb_build_object('email', lower(trim(p_email))));
-  return jsonb_build_object('user_id', u);
+  if exists (select 1 from profiles where username = v) then raise exception 'The username % is already taken.', v; end if;
+  insert into profiles (username, password_hash, role) values (v, private.hash_password(p_password), 'team') returning id into u;
+  insert into team_memberships (team_id, user_id) values (p_team, u);
+  perform private.audit('team_login.create', 'team', p_team::text, null, jsonb_build_object('username', v));
+  return jsonb_build_object('user_id', u, 'username', v);
 end $$;
 
-create function public.admin_unlink_team_login(p_user uuid) returns void
+create function public.admin_reset_team_password(p_user uuid, p_password text) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
-declare v_team uuid;
+declare v text;
 begin
   perform private.require_admin();
-  delete from team_memberships where user_id = p_user returning team_id into v_team;
-  update profiles set role = 'viewer' where id = p_user and role = 'team';
-  perform private.audit('team_login.unlink', 'team', v_team::text, null, jsonb_build_object('user_id', p_user));
+  select username into v from profiles where id = p_user and role = 'team';
+  if v is null then raise exception 'Team login not found.'; end if;
+  perform private.check_credentials(v, p_password);
+  update profiles set password_hash = private.hash_password(p_password), updated_at = now() where id = p_user;
+  delete from user_sessions where user_id = p_user;
+  delete from login_attempts where username = v;
+  perform private.audit('team_login.reset_password', 'profile', p_user::text, null, jsonb_build_object('username', v));
+end $$;
+
+create function public.admin_remove_team_login(p_user uuid) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare v text; v_team uuid;
+begin
+  perform private.require_admin();
+  select p.username, m.team_id into v, v_team from profiles p left join team_memberships m on m.user_id = p.id where p.id = p_user and p.role = 'team';
+  if v is null then raise exception 'Team login not found.'; end if;
+  delete from profiles where id = p_user;
+  perform private.audit('team_login.remove', 'team', v_team::text, null, jsonb_build_object('username', v));
 end $$;
 
 ---------------------------------------------------------------- admin: settings and announcements
@@ -799,7 +893,7 @@ begin
   perform private.require_admin();
   if v is null then
     insert into announcements (tournament_id, title, body, is_published, show_on_projector, created_by)
-    values (t, trim(p->>'title'), nullif(trim(coalesce(p->>'body', '')), ''), coalesce((p->>'is_published')::boolean, true), coalesce((p->>'show_on_projector')::boolean, false), auth.uid())
+    values (t, trim(p->>'title'), nullif(trim(coalesce(p->>'body', '')), ''), coalesce((p->>'is_published')::boolean, true), coalesce((p->>'show_on_projector')::boolean, false), private.uid())
     returning id into v;
   else
     update announcements set title = trim(p->>'title'), body = nullif(trim(coalesce(p->>'body', '')), ''),
@@ -995,7 +1089,7 @@ begin
 
   v_tid := s.tournament_id;
   insert into player_sales (tournament_id, session_id, auction_player_id, player_id, team_id, price, winning_bid_id, confirmed_by)
-  values (v_tid, s.id, p_ap, a.player_id, a.high_team_id, a.high_bid, a.high_bid_id, auth.uid()) returning id into v_sale;
+  values (v_tid, s.id, p_ap, a.player_id, a.high_team_id, a.high_bid, a.high_bid_id, private.uid()) returning id into v_sale;
   insert into team_squads (tournament_id, team_id, player_id, sale_id, price) values (v_tid, a.high_team_id, a.player_id, v_sale, a.high_bid);
   perform private.recalc_budget(a.high_team_id);
   update auction_players set status = 'sold', updated_at = now() where id = p_ap;
@@ -1067,7 +1161,7 @@ begin
   select * into sl from player_sales where id = p_sale and tournament_id = s.tournament_id for update;
   if not found then raise exception 'Sale not found.'; end if;
   if sl.undone_at is not null then raise exception 'This sale has already been undone.'; end if;
-  update player_sales set undone_at = now(), undone_by = auth.uid(), undo_reason = trim(p_reason) where id = p_sale;
+  update player_sales set undone_at = now(), undone_by = private.uid(), undo_reason = trim(p_reason) where id = p_sale;
   delete from team_squads where sale_id = p_sale;
   perform private.recalc_budget(sl.team_id);
   perform private.reset_lot(sl.auction_player_id, 'queued');
@@ -1117,7 +1211,7 @@ begin
   if v_count >= b.squad_limit then return private.reject_bid(s.id, p_ap, p_team, p_amount, 'squad_full', 'Your squad is full.', v_next); end if;
 
   insert into bids (session_id, auction_player_id, team_id, amount, round, placed_by, source)
-  values (s.id, p_ap, p_team, p_amount, a.round, auth.uid(), p_source) returning id into v_bid;
+  values (s.id, p_ap, p_team, p_amount, a.round, private.uid(), p_source) returning id into v_bid;
   update auction_players set high_bid = p_amount, high_team_id = p_team, high_bid_id = v_bid, bid_count = bid_count + 1, updated_at = now() where id = p_ap;
 
   select case when s.phase = 'last_call' then last_call_seconds else bid_countdown_seconds end into v_cd from tournament_settings where tournament_id = s.tournament_id;
@@ -1185,7 +1279,7 @@ begin
       where b.session_id = sid order by b.created_at desc limit p_limit) x;
   elsif p_kind = 'audit' then
     select jsonb_agg(x order by x.id desc) into r from (
-      select l.id, l.action, l.entity_type, l.entity_id, l.reason, l.created_at, pr.email as actor_email, l.before_data, l.after_data
+      select l.id, l.action, l.entity_type, l.entity_id, l.reason, l.created_at, pr.username as actor_username, l.before_data, l.after_data
       from admin_audit_logs l left join profiles pr on pr.id = l.actor_id
       where l.tournament_id = t order by l.id desc limit p_limit) x;
   elsif p_kind = 'squads' then
@@ -1216,31 +1310,34 @@ begin
   end loop;
 end $$;
 
+-- Password hashes, sessions and login counters are reachable only through the functions.
+revoke all on public.profiles, public.user_sessions, public.login_attempts from anon, authenticated;
+
 grant usage on schema private to anon, authenticated;
-grant execute on function private.is_admin(), private.current_team() to anon, authenticated;
+grant execute on function private.is_admin(), private.current_team(), private.uid() to anon, authenticated;
 
 -- Open to the public: registration and the read-only live state used by the projector.
-grant execute on function public.get_auction_state(), public.registration_precheck(text), public.register_player(jsonb) to anon, authenticated;
+grant execute on function public.get_auction_state(), public.registration_precheck(text), public.register_player(jsonb),
+  public.login(text, text), public.logout() to anon, authenticated;
 
--- Signed-in users. Each function checks the caller's role itself.
+-- The API role is the same for everyone, so each of these functions checks the session and role itself.
 do $$
 declare r record;
 begin
   for r in select p.oid::regprocedure as f from pg_proc p
     where p.pronamespace = 'public'::regnamespace
-      and (p.proname like 'admin\_%' or p.proname in ('place_bid','get_team_dashboard','get_my_context')) loop
-    execute format('grant execute on function %s to authenticated', r.f);
+      and (p.proname like 'admin\_%' or p.proname in ('place_bid','get_team_dashboard','get_my_context','change_password')) loop
+    execute format('grant execute on function %s to anon, authenticated', r.f);
   end loop;
 end $$;
 
 -- Read policies. There are no write policies: writes happen only through the functions above.
-create policy "self or admin" on public.profiles for select using (id = auth.uid() or (select private.is_admin()));
 create policy "public read" on public.tournaments for select using (true);
 create policy "public read" on public.tournament_settings for select using (true);
 create policy "approved or admin" on public.players for select using (status = 'approved' or (select private.is_admin()));
 create policy "admin only" on public.player_contacts for select using ((select private.is_admin()));
 create policy "public read" on public.teams for select using (true);
-create policy "self or admin" on public.team_memberships for select using (user_id = auth.uid() or (select private.is_admin()));
+create policy "self or admin" on public.team_memberships for select using (user_id = (select private.uid()) or (select private.is_admin()));
 create policy "public read" on public.team_budgets for select using (true);
 create policy "public read" on public.auction_sessions for select using (true);
 create policy "public read" on public.auction_players for select using (true);
@@ -1251,20 +1348,15 @@ create policy "admin only" on public.auction_events for select using ((select pr
 create policy "admin only" on public.admin_audit_logs for select using ((select private.is_admin()));
 create policy "published or admin" on public.announcements for select using (is_published or (select private.is_admin()));
 
--- Storage: public images. Anyone may add a registration photo; only admins change anything else.
+-- Storage: public images, in known folders only, with no overwriting or deleting.
+-- Uploading alone changes nothing: only the checked functions can attach a file to a player, team or tournament.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('league-media', 'league-media', true, 3145728, array['image/jpeg','image/png','image/webp'])
 on conflict (id) do update set public = true, file_size_limit = 3145728, allowed_mime_types = array['image/jpeg','image/png','image/webp'];
 
 create policy "league media read" on storage.objects for select using (bucket_id = 'league-media');
-create policy "league registration upload" on storage.objects for insert to anon, authenticated
-  with check (bucket_id = 'league-media' and (storage.foldername(name))[1] = 'registrations');
-create policy "league admin upload" on storage.objects for insert to authenticated
-  with check (bucket_id = 'league-media' and (select private.is_admin()));
-create policy "league admin update" on storage.objects for update to authenticated
-  using (bucket_id = 'league-media' and (select private.is_admin()));
-create policy "league admin delete" on storage.objects for delete to authenticated
-  using (bucket_id = 'league-media' and (select private.is_admin()));
+create policy "league media upload" on storage.objects for insert to anon, authenticated
+  with check (bucket_id = 'league-media' and (storage.foldername(name))[1] in ('registrations','players','teams','branding'));
 
 -- Realtime: clients watch the session version, then fetch the state from the server.
 alter publication supabase_realtime add table public.auction_sessions;

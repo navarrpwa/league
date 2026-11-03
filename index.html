@@ -512,17 +512,32 @@ const Theme = {
 };
 
 /* ========== 7. Sign-in ========== */
+const TOKEN_KEY = 'league-session';
+const Session = {
+  get() { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } },
+  set(t) { try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch { } },
+};
 const Auth = {
   ctx: null, ready: false,
   async load() {
-    const { data: { session } } = await sb.auth.getSession();
-    if (!session) { this.ctx = null; this.ready = true; return null; }
-    try { this.ctx = await rpc('get_my_context'); } catch { this.ctx = null; }
+    if (!Session.get()) { this.ctx = null; this.ready = true; return null; }
+    try { this.ctx = await rpc('get_my_context'); if (!this.ctx) Session.set(null); } catch { this.ctx = null; }
     this.ready = true; return this.ctx;
   },
-  async signOut() { await sb.auth.signOut(); this.ctx = null; location.hash = '#/login'; },
+  async signIn(username, password) {
+    const r = await rpc('login', { p_username: username, p_password: password });
+    if (!r.ok) throw new Error(r.message);
+    Session.set(r.token); return this.load();
+  },
+  async signOut() { try { await rpc('logout'); } catch { } Session.set(null); this.ctx = null; location.hash = '#/login'; },
   home() { return this.ctx?.role === 'admin' ? '#/admin/dashboard' : this.ctx?.team_id ? '#/team' : '#/login'; },
 };
+function passwordDialog() {
+  const m = openModal(html`<h2>Change password</h2><form class="stack" id="cpf"><label class="f">Current password<input name="c" type="password" required autocomplete="current-password"></label>
+    <label class="f">New password <small>At least 8 characters.</small><input name="n" type="password" minlength="8" required autocomplete="new-password"></label>
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn" data-close>Cancel</button><button class="btn primary">Save password</button></div></form>`.s);
+  $('#cpf', m.el).onsubmit = e => { e.preventDefault(); const d = formData(e.target); act(async () => { await rpc('change_password', { p_current: d.c, p_new: d.n }); m.close(); toast('Password saved.'); }, $('button.primary', m.el)); };
+}
 
 /* ========== 8. Router ========== */
 const routes = [];
@@ -530,7 +545,6 @@ const route = (re, fn) => routes.push([re, fn]);
 let cleanup = null;
 async function renderRoute() {
   const h = location.hash || '#/';
-  if (/access_token=|error_description=/.test(h)) return; // Supabase is finishing an email link.
   if (typeof cleanup === 'function') { try { cleanup(); } catch { } } cleanup = null;
   $('#modal-root').innerHTML = '';
   const app = $('#app');
@@ -602,42 +616,14 @@ route(/^#\/register$/, (app) => {
 
 route(/^#\/login$/, async (app) => {
   await Auth.load();
-  if (Auth.ctx?.role === 'admin' || Auth.ctx?.team_id) { location.hash = Auth.home(); return; }
-  const signed = !!Auth.ctx;
+  if (Auth.ctx) { location.hash = Auth.home(); return; }
   app.innerHTML = pubShell(html`<div class="authbox panel stack"><h2>Sign in</h2>
-    ${signed ? html`<p class="muted">${Auth.ctx.email} is not linked to a team yet. Ask the league admin to link it.</p><button class="btn" id="so">Sign out</button>` : html`
-    <form id="lf" class="stack"><label class="f">Email<input name="email" type="email" required autocomplete="username"></label>
+    <form id="lf" class="stack"><label class="f">Username<input name="username" required autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"></label>
     <label class="f">Password<input name="password" type="password" required autocomplete="current-password"></label>
-    <button class="btn primary" id="lb">Sign in</button></form><button class="btn ghost sm" id="fp">Forgot password</button>`}</div>`);
-  if (signed) { $('#so').onclick = () => Auth.signOut().then(renderRoute); return; }
+    <button class="btn primary" id="lb">Sign in</button></form><p class="muted small">Forgotten your password? Ask the league admin to reset it.</p></div>`);
   $('#lf').onsubmit = e => {
     e.preventDefault(); const d = formData(e.target);
-    act(async () => {
-      const { error } = await sb.auth.signInWithPassword({ email: d.email.trim(), password: d.password });
-      if (error) throw new Error(/invalid/i.test(error.message) ? 'That email and password do not match.' : /confirm/i.test(error.message) ? 'This account has not been confirmed. Turn off email confirmation in Supabase, or confirm the email.' : error.message);
-      await Auth.load();
-      if (location.hash === Auth.home()) renderRoute(); else if (Auth.ctx?.role === 'admin' || Auth.ctx?.team_id) location.hash = Auth.home(); else renderRoute();
-    }, $('#lb'));
-  };
-  $('#fp').onclick = async () => {
-    const email = await confirmDialog({ title: 'Reset your password', body: 'A reset link will go to this address.', confirmLabel: 'Send reset link', input: { label: 'Email' } });
-    if (!email) return;
-    act(async () => {
-      const { error } = await sb.auth.resetPasswordForEmail(email.trim(), { redirectTo: location.origin + location.pathname });
-      if (error) throw error; toast('If that account exists, a reset link is on its way.');
-    });
-  };
-});
-
-route(/^#\/reset$/, (app) => {
-  app.innerHTML = pubShell(html`<div class="authbox panel stack"><h2>Choose a new password</h2>
-    <form id="nf" class="stack"><label class="f">New password <small>At least 8 characters.</small><input name="p" type="password" minlength="8" required autocomplete="new-password"></label><button class="btn primary">Save password</button></form></div>`);
-  $('#nf').onsubmit = e => {
-    e.preventDefault();
-    act(async () => {
-      const { error } = await sb.auth.updateUser({ password: formData(e.target).p });
-      if (error) throw error; toast('Password saved.'); await Auth.load(); location.hash = Auth.home();
-    }, $('button', e.target));
+    act(async () => { await Auth.signIn(d.username.trim(), d.password); location.hash = Auth.home(); }, $('#lb'));
   };
 });
 
@@ -653,10 +639,7 @@ route(/^#\/team$/, async (app) => {
     <div class="page stack"><div id="thead"></div><div id="bidbox"></div><div id="tfigs" class="stat-grid"></div><div id="annc"></div>
     <div class="fgrid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))"><div class="panel"><h3>Squad by position</h3><div id="pos"></div></div><div class="panel"><h3>Purchase history</h3><div id="hist"></div></div></div></div>`.s;
     $('#so').onclick = () => Auth.signOut();
-    $('#pw').onclick = async () => {
-      const p = await confirmDialog({ title: 'Change password', confirmLabel: 'Save password', input: { label: 'New password, at least 8 characters' } });
-      if (!p) return; act(async () => { const { error } = await sb.auth.updateUser({ password: p }); if (error) throw error; toast('Password saved.'); });
-    };
+    $('#pw').onclick = passwordDialog;
     shellDone = true;
   };
   const paintStatic = () => {
@@ -973,9 +956,10 @@ route(/^#\/admin(?:\/(\w+))?$/, async (app, mod = 'dashboard') => {
   const title = NAV.flatMap(g => g[1]).find(x => x[0] === mod)?.[1] || 'Dashboard';
   app.innerHTML = html`<div class="shell"><nav class="side" aria-label="Admin"><a class="brand" href="#/"><span data-league>League Auction</span></a>
     ${NAV.map(([g, items]) => html`${g ? html`<div class="grp">${g}</div>` : ''}${items.map(([k, l]) => html`<a class="nav ${k === mod ? 'on' : ''}" href="#/admin/${k}">${l}</a>`)}`)}</nav>
-    <div class="main"><div class="bar-top"><h2>${title}</h2><div class="row"><span id="ast" class="tag"></span><a class="btn sm" href="#/auction/live" target="_blank" rel="noopener">Open projector</a><button class="btn sm ghost" id="so">Sign out</button></div></div>
+    <div class="main"><div class="bar-top"><h2>${title}</h2><div class="row"><span id="ast" class="tag"></span><a class="btn sm" href="#/auction/live" target="_blank" rel="noopener">Open projector</a><button class="btn sm ghost" id="pw">Change password</button><button class="btn sm ghost" id="so">Sign out</button></div></div>
     <div class="content" id="c"></div></div></div>`.s;
   $('#so').onclick = () => Auth.signOut();
+  $('#pw').onclick = passwordDialog;
   const un1 = Live.sub(s => { if (!s) return; $('#ast').textContent = statusText(s); $('#ast').className = 'tag ' + (s.session.status === 'live' ? 'live' : s.session.status === 'paused' ? 'paused' : ''); $$('[data-league]').forEach(e => e.textContent = s.tournament.name); });
   const inner = await (adminViews[mod] || adminViews.dashboard)($('#c'));
   return () => { un1(); inner?.(); };
@@ -1101,34 +1085,27 @@ adminViews.teams = async (c) => {
   return () => { un(); c.onclick = null; };
 };
 adminViews.logins = async (c) => {
-  const s = await whenState();
+  await whenState();
   const load = async () => {
     const list = await rpc('admin_list_team_logins'), teams = Live.state.teams;
     c.innerHTML = html`<form class="panel stack" id="lf"><h3>Create a team login</h3><div class="fgrid">
       <label class="f">Team<select name="team" required>${teams.map(t => html`<option value="${t.id}">${t.name}</option>`)}</select></label>
-      <label class="f">Email<input name="email" type="email" required autocomplete="off"></label>
-      <label class="f">Password <small>At least 8 characters. Existing accounts keep theirs.</small><input name="password" type="text" minlength="8" autocomplete="off"></label></div>
+      <label class="f">Username <small>Letters, numbers, dots or dashes</small><input name="username" required autocomplete="off" autocapitalize="none" spellcheck="false"></label>
+      <label class="f">Password <small>At least 8 characters. Share it with the team.</small><input name="password" type="text" minlength="8" required autocomplete="off"></label></div>
       <div><button class="btn primary" ${teams.length ? '' : 'disabled'}>Create login</button></div></form>
-    ${table([{ h: 'Team', v: l => teams.find(t => t.id === l.team_id)?.name }, { h: 'Email', v: l => l.email }, { h: 'Linked', v: l => when(l.created_at) }, { h: '', v: l => html`<div class="row" style="flex-wrap:nowrap;gap:.3rem"><button class="btn sm" data-reset="${l.email}">Send password reset</button><button class="btn sm ghost" data-un="${l.user_id}">Remove login</button></div>` }], list, 'No team logins yet.')}`.s;
+    ${table([{ h: 'Team', v: l => teams.find(t => t.id === l.team_id)?.name }, { h: 'Username', v: l => l.username }, { h: 'Created', v: l => when(l.created_at) }, { h: '', v: l => html`<div class="row" style="flex-wrap:nowrap;gap:.3rem"><button class="btn sm" data-reset="${l.user_id}" data-n="${l.username}">Reset password</button><button class="btn sm ghost" data-un="${l.user_id}">Remove login</button></div>` }], list, 'No team logins yet.')}`.s;
     $('#lf').onsubmit = e => {
-      e.preventDefault(); const d = formData(e.target), email = d.email.trim().toLowerCase();
-      act(async () => {
-        // A second client creates the account so the admin stays signed in. The password is never stored by this app.
-        if (d.password) {
-          const temp = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'league-temp-signup' } });
-          const { data, error } = await temp.auth.signUp({ email, password: d.password });
-          if (error && !/already/i.test(error.message)) throw error;
-          if (data?.user && !data.session && data.user.identities?.length) toast('Account created, but email confirmation is on. Turn it off in Supabase so this login works straight away.', true);
-        }
-        await rpc('admin_link_team_login', { p_team: d.team, p_email: email });
-        toast('Team login ready.'); await load();
-      }, $('button.primary', e.target));
+      e.preventDefault(); const d = formData(e.target);
+      act(async () => { await rpc('admin_create_team_login', { p_team: d.team, p_username: d.username.trim(), p_password: d.password }); toast('Team login ready.'); await load(); }, $('button.primary', e.target));
     };
   };
   c.onclick = async e => {
     const un = e.target.dataset?.un, rs = e.target.dataset?.reset;
-    if (un && await confirmDialog({ title: 'Remove this login', body: 'The account can no longer act for the team.', confirmLabel: 'Remove login', tone: 'danger' })) act(async () => { await rpc('admin_unlink_team_login', { p_user: un }); toast('Login removed.'); await load(); });
-    if (rs) act(async () => { const { error } = await sb.auth.resetPasswordForEmail(rs, { redirectTo: location.origin + location.pathname }); if (error) throw error; toast('Reset link sent to ' + rs + '.'); });
+    if (un && await confirmDialog({ title: 'Remove this login', body: 'The account is deleted and signed out everywhere.', confirmLabel: 'Remove login', tone: 'danger' })) act(async () => { await rpc('admin_remove_team_login', { p_user: un }); toast('Login removed.'); await load(); });
+    if (rs) {
+      const p = await confirmDialog({ title: 'Reset password for ' + e.target.dataset.n, body: 'The team is signed out on all devices.', confirmLabel: 'Reset password', input: { label: 'New password, at least 8 characters' } });
+      if (p !== null) act(async () => { await rpc('admin_reset_team_password', { p_user: rs, p_password: p }); toast('Password reset.'); });
+    }
   };
   await act(load);
   return () => { c.onclick = null; };
@@ -1267,7 +1244,7 @@ adminViews.unsold = async (c) => {
 adminViews.history = async (c) => {
   const [ev, au] = await Promise.all([rpc('admin_list', { p_kind: 'events', p_limit: 300 }), rpc('admin_list', { p_kind: 'audit', p_limit: 200 })]);
   c.innerHTML = html`<h3>Auction events</h3>${table([{ h: 'Time', v: e => when(e.created_at) }, { h: 'Event', v: e => e.type.replace(/_/g, ' ') }, { h: 'Player', v: e => e.full_name }, { h: 'Team', v: e => e.team_name }, { h: 'Points', r: 1, v: e => e.amount === null ? '' : fmt(e.amount) }, { h: 'Note', v: e => e.message }], ev, 'Nothing has happened yet.')}
-    <h3>Admin audit log</h3>${table([{ h: 'Time', v: e => when(e.created_at) }, { h: 'Admin', v: e => e.actor_email }, { h: 'Action', v: e => e.action }, { h: 'Reason', v: e => e.reason }], au, 'No admin actions yet.')}`.s;
+    <h3>Admin audit log</h3>${table([{ h: 'Time', v: e => when(e.created_at) }, { h: 'Admin', v: e => e.actor_username }, { h: 'Action', v: e => e.action }, { h: 'Reason', v: e => e.reason }], au, 'No admin actions yet.')}`.s;
 };
 
 /* ---------- Announcements ---------- */
@@ -1294,7 +1271,7 @@ adminViews.reports = async (c) => {
     ['Team squads', 'Final squads, one row per player.', async () => toCsv(await rpc('admin_list', { p_kind: 'squads' }), [['team', 'team_name'], ['code', 'code'], ['player', 'full_name'], ['position', 'primary_position'], ['category', 'category'], ['price', 'price']]), 'squads'],
     ['Team budgets', 'Budget, spend and squad size per team.', async () => toCsv(Live.state.teams, [['team', 'name'], ['starting_budget', 'starting_budget'], ['spent', 'spent'], ['remaining', 'remaining'], ['squad_count', 'squad_count'], ['squad_limit', 'squad_limit']]), 'budgets'],
     ['All bids', 'Every accepted bid, including cancelled ones.', async () => toCsv(await rpc('admin_list', { p_kind: 'bids', p_limit: 100000 }), [['time', 'created_at'], ['code', 'code'], ['player', 'full_name'], ['team', 'team_name'], ['amount', 'amount'], ['round', 'round'], ['source', 'source'], ['cancelled_at', 'voided_at']]), 'bids'],
-    ['Admin audit log', 'Who changed what, and when.', async () => toCsv(await rpc('admin_list', { p_kind: 'audit', p_limit: 100000 }), [['time', 'created_at'], ['admin', 'actor_email'], ['action', 'action'], ['type', 'entity_type'], ['id', 'entity_id'], ['reason', 'reason']]), 'audit'],
+    ['Admin audit log', 'Who changed what, and when.', async () => toCsv(await rpc('admin_list', { p_kind: 'audit', p_limit: 100000 }), [['time', 'created_at'], ['admin', 'actor_username'], ['action', 'action'], ['type', 'entity_type'], ['id', 'entity_id'], ['reason', 'reason']]), 'audit'],
   ];
   c.innerHTML = html`<div class="doors" style="margin:0">${R.map((r, i) => html`<div class="panel stack"><div><h3 style="margin-bottom:.2rem">${r[0]}</h3><p class="muted small">${r[1]}</p></div><div><button class="btn" data-i="${i}">Download CSV</button></div></div>`)}</div>`.s;
   c.onclick = e => { const i = e.target.dataset?.i; if (i !== undefined) act(async () => download(R[i][3] + '.csv', await R[i][2]()), e.target); };
@@ -1336,10 +1313,13 @@ function startApp() {
     return;
   }
   if (!window.supabase) { $('#app').innerHTML = html`<div class="page"><div class="hero"><h1>Connection needed</h1><p class="muted" style="margin-top:1rem">The app could not load. Connect to the internet and reload this page.</p></div></div>`.s; return; }
-  sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' } });
-  sb.auth.onAuthStateChange((ev) => {
-    if (ev === 'PASSWORD_RECOVERY') setTimeout(() => { location.hash = '#/reset'; }, 0);
-  });
+  // Logins are the app's own, so each request carries the session token in a header the database reads.
+  const withSession = (url, opts = {}) => {
+    const headers = new Headers(opts.headers); const t = Session.get();
+    if (t) headers.set('x-league-session', t);
+    return fetch(url, { ...opts, headers });
+  };
+  sb = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { fetch: withSession } });
   addEventListener('hashchange', renderRoute);
   addEventListener('beforeinstallprompt', e => { e.preventDefault(); window.__installPrompt = e; });
   Live.start();

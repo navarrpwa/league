@@ -10,6 +10,7 @@ The whole interface is in `index.html`. The backend is Supabase. It deploys to G
 | `index.html` | The complete frontend: all HTML, CSS, JavaScript, routes and animations |
 | `manifest.webmanifest`, `sw.js`, `icons/` | PWA support. Browsers require these to be separate files, so they cannot go inside `index.html` |
 | `supabase/setup_all.sql` | The full database setup in one file, for the SQL editor |
+| `supabase/reset_before_setup.sql` | Deletes an earlier setup. Use only before re-running the setup |
 | `supabase/migrations/` | The same SQL split into schema, functions and security |
 | `tests/` | Database and browser tests. Not needed for deployment |
 
@@ -17,14 +18,14 @@ The whole interface is in `index.html`. The backend is Supabase. It deploys to G
 
 1. **Create a Supabase project** at supabase.com.
 2. **Run the database setup.** In SQL Editor, paste all of `supabase/setup_all.sql` and run it once. This also creates the storage bucket, its policies and the realtime publication.
-3. **Configure sign-in.** In Authentication > Sign In / Providers > Email, turn **Confirm email** off, so the team logins you create work immediately. Leave email sign-in enabled.
-4. **Set the redirect URL.** In Authentication > URL Configuration, set Site URL to your Pages address, such as `https://YOUR-NAME.github.io/YOUR-REPO/`, and add the same address to Redirect URLs. Password reset links use it.
-5. **Create your admin.** In Authentication > Users, choose Add user and create your account. Then run this in SQL Editor:
+3. **Replacing an earlier setup?** If you already ran an older `setup_all.sql` in this project, run `supabase/reset_before_setup.sql` first, then `setup_all.sql`. The reset deletes all league data, so never run it once real data exists.
+4. **Create your admin.** Run this in SQL Editor with your own username, password and league name:
    ```sql
-   select private.bootstrap_admin('you@example.com', 'Your League Name');
+   select private.bootstrap_admin('admin', 'your-strong-password', 'Your League Name');
    ```
-   This can only run from the SQL editor. The app has no way to grant admin rights. Run it again with another email to add a second admin.
-6. **Connect the app.** In Project Settings > API, copy the project URL and the publishable (anon) key into the `CONFIG` block near the top of the script in `index.html`. Never use the service-role or secret key.
+   This can only run from the SQL editor. The app has no way to grant admin rights. Run it again with another username to add an admin, or with the same username to reset a forgotten admin password.
+5. **Sign in** at `#/login`. Create teams, then create each team's username and password under Team logins. No emails are needed or sent, and Supabase Auth is not used.
+6. **Connect the app.** In Project Settings > API Keys, copy the project URL and the publishable key into the `CONFIG` block near the top of the script in `index.html`. Never use the service-role or secret key.
 7. **Create a GitHub repository** and add `index.html`, `manifest.webmanifest`, `sw.js` and `icons/`. Leave `tests/` and `supabase/` out if you prefer. The app does not load them.
 8. **Enable GitHub Pages.** In Settings > Pages, set Source to "Deploy from a branch", then choose `main` and `/ (root)`. All paths are relative, so a project URL under a repository name works.
 9. **Test before the event** with the checklist below.
@@ -105,7 +106,7 @@ These are decisions the brief left open. They are easy to change if your league 
 
 | Table | Holds |
 |---|---|
-| `profiles` | Each account and its role: admin, team or viewer |
+| `profiles`, `user_sessions`, `login_attempts` | Usernames, password hashes and roles; sessions; failed sign-in counts. None is readable through the API |
 | `tournaments`, `tournament_settings` | League, branding, timers and defaults |
 | `players` | Public player details |
 | `player_contacts` | Phone numbers, kept apart and readable only by admins |
@@ -122,16 +123,19 @@ These are decisions the brief left open. They are easy to change if your league 
 
 - The browser holds only the publishable key. Hiding admin pages is not what protects them: each admin function checks the caller's role on the server.
 - API users have **no direct write access to any table**. All writes go through database functions that validate them.
-- Anonymous users can run only three functions: read the live state, check a registration and register a player.
-- Passwords are handled by Supabase Auth. The app never stores them.
-- Anyone can upload to the `registrations/` folder, limited to 3 MB and JPG, PNG or WebP. Uploaded photos are public. Everything else in the bucket is admin-only.
+- Without a session, a caller can only read the live state, register a player and sign in. All other functions refuse them.
+- **Logins are the app's own.** Usernames and bcrypt password hashes are in `profiles`, which the API cannot read. Sign-in returns a random 30-day session token, and only its SHA-256 hash is stored. The browser sends it in an `x-league-session` header on each request.
+- After 10 wrong passwords, a username locks for one minute. Changing or resetting a password signs out other devices.
+- Anyone can upload images to the bucket's known folders, limited to 3 MB and JPG, PNG or WebP, because Storage can't see the app's own logins. Files can't be overwritten or deleted through the API, and only the checked functions can attach a file to a player, team or tournament.
 
 ### Known limits
 
 - **Registration is public with no rate limit.** Someone could submit junk entries, which wait in the pending list, or upload junk photos. The form also reveals whether a phone number is already registered, which duplicate prevention requires. If this becomes a problem, turn on Supabase's CAPTCHA support and add a check to the registration function.
 - **Approved players' name, photo, age, position and description are publicly readable** through the API, not only the fields shown on screen.
 - **One active tournament per project.** Use a new Supabase project for each new season.
-- **Admins cannot set a team's password directly**, because that needs a secret key the browser must not hold. They can send a reset email, or remove the login and create a new one with another email. Supabase's built-in email service is heavily rate-limited, so set up custom SMTP if you depend on reset emails.
+- **Sign-in tokens are kept in browser storage**, so a script injected into the page could read them. All displayed values are escaped to prevent that.
+- **There is no self-service password reset**, because accounts have no email. Admins reset team passwords, and the SQL editor resets admin passwords.
+- **Old unattached images stay in storage.** Clean them up in the Supabase dashboard if needed.
 - **Phone numbers are matched by digits only**, so `+974 5555 1234` and `55551234` count as different numbers.
 
 ## Implementation phases
@@ -150,8 +154,8 @@ All phases are complete in this delivery.
 
 ```
 cd tests && npm install && npx playwright install chromium
-npm run test:db    # 68 checks on real PostgreSQL using the same migrations
-npm run test:e2e   # 40 browser checks across registration, admin, two teams and the projector
+npm run test:db    # 82 checks on real PostgreSQL using the same migrations
+npm run test:e2e   # 43 browser checks across registration, admin, two teams and the projector
 ```
 
-The tests use a real PostgreSQL server, so database rules, permissions and concurrency are exercised for real. Supabase's own Auth, Storage and Realtime services are **stand-ins** in `tests/gateway.js`, so the checklist above still needs running on your actual project.
+The tests use a real PostgreSQL server, so database rules, permissions and concurrency are exercised for real. Supabase's REST, Storage and Realtime services are **stand-ins** in `tests/gateway.js`, so the checklist above still needs running on your actual project.

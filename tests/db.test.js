@@ -4,13 +4,14 @@ let pass=0,fail=0;const T=async(n,f)=>{try{await f();pass++;console.log('  ok  '
 const denied=async p=>{let m=null;try{await p}catch(e){m=e.message}assert(m,'expected refusal');return m};
 (async()=>{
 const {pg,pool}=await boot(55441,require('os').tmpdir()+'/league-pg-test');
-const mk=async e=>(await pool.query(`insert into auth.users(email) values($1) returning id`,[e])).rows[0].id;
-const admin=await mk('admin@x.io');await pool.query(`select private.bootstrap_admin('admin@x.io','Doha League')`);
+await pool.query(`select private.bootstrap_admin('admin','adminpass1','Doha League')`);
+const signIn=async(u,p)=>(await as(pool,null,'select public.login($1,$2) r',[u,p])).rows[0].r;
+let admin=(await signIn('admin','adminpass1')).token;
 const A=(s,p)=>as(pool,admin,s,p);
 const one=async(u,fn,...args)=>{const ph=args.map((_,i)=>'$'+(i+1)).join(',');return Object.values((await as(pool,u,`select public.${fn}(${ph}) r`,args)).rows[0])[0]};
 const st=async()=>(await as(pool,null,'select public.get_auction_state() r')).rows[0].r;
 const teams={};const users={};
-for(const n of ['Falcons','Oryx','Pearls','Dunes']){const t=await one(admin,'admin_save_team',JSON.stringify({name:n,starting_budget:1000,squad_limit:2}));teams[n]=t.id;const u=await mk(n+'@x.io');users[n]=u;await one(admin,'admin_link_team_login',t.id,n+'@x.io')}
+for(const n of ['Falcons','Oryx','Pearls','Dunes']){const t=await one(admin,'admin_save_team',JSON.stringify({name:n,starting_budget:1000,squad_limit:2}));teams[n]=t.id;const un=n.toLowerCase();await one(admin,'admin_create_team_login',t.id,un,'teampass1');users[n]=(await signIn(un,'teampass1')).token}
 const reg=(i,o={})=>one(null,'register_player',JSON.stringify({full_name:'Player '+i,phone:'+974 5550 '+String(1000+i),photo_path:`registrations/00000000-0000-0000-0000-${String(i).padStart(12,'0')}.jpg`,primary_position:'Forward',age:22,category:'Senior',...o}));
 const pidOf=async name=>(await pool.query('select id from players where full_name=$1',[name])).rows[0].id;
 const apOf=async name=>(await pool.query('select a.id from auction_players a join players p on p.id=a.player_id where p.full_name=$1',[name])).rows[0].id;
@@ -40,13 +41,29 @@ for(const fn of ['admin_start_auction()','admin_list(\'players\')','admin_undo_s
  await T('team refused: '+fn,()=>denied(as(pool,users.Oryx,'select public.'+fn)));
  await T('anon refused: '+fn,()=>denied(as(pool,null,'select public.'+fn)));
 }
-await T('internal functions unreachable by API roles',async()=>{await denied(as(pool,users.Oryx,`select private.bootstrap_admin('Oryx@x.io')`));await denied(as(pool,users.Oryx,`select private.recalc_budget(gen_random_uuid())`));await denied(as(pool,null,`select private.apply_bid(gen_random_uuid(),gen_random_uuid(),1,'team')`))});
+await T('internal functions unreachable by API roles',async()=>{await denied(as(pool,users.Oryx,`select private.bootstrap_admin('oryx','hackedpass1')`));await denied(as(pool,users.Oryx,`select private.recalc_budget(gen_random_uuid())`));await denied(as(pool,null,`select private.apply_bid(gen_random_uuid(),gen_random_uuid(),1,'team')`))});
 await T('team cannot open another team dashboard',async()=>{await denied(one(users.Oryx,'get_team_dashboard',teams.Falcons));assert.equal((await one(users.Oryx,'get_team_dashboard')).team.name,'Oryx')});
 await T('anon cannot bid',()=>denied(one(null,'place_bid','00000000-0000-0000-0000-000000000000',1)));
-await T('anon may upload only to registrations',async()=>{await as(pool,null,`insert into storage.objects(bucket_id,name) values('league-media','registrations/a.jpg')`);await denied(as(pool,null,`insert into storage.objects(bucket_id,name) values('league-media','teams/a.jpg')`));await denied(as(pool,users.Oryx,`insert into storage.objects(bucket_id,name) values('league-media','teams/b.jpg')`));await A(`insert into storage.objects(bucket_id,name) values('league-media','teams/c.jpg')`)});
-await T('every public function is security definer or read-only, none open to anon by accident',async()=>{const r=await pool.query(`select p.proname from pg_proc p where p.pronamespace='public'::regnamespace and has_function_privilege('anon',p.oid,'execute')`);assert.deepEqual(r.rows.map(x=>x.proname).sort(),['get_auction_state','register_player','registration_precheck'])});
+await T('uploads only into known folders, no overwrite or delete',async()=>{await as(pool,null,`insert into storage.objects(bucket_id,name) values('league-media','registrations/a.jpg')`);await denied(as(pool,null,`insert into storage.objects(bucket_id,name) values('league-media','other/a.jpg')`));const r=await as(pool,users.Oryx,`delete from storage.objects`);assert.equal(r.rowCount,0);const u=await as(pool,null,`update storage.objects set name='x'`);assert.equal(u.rowCount,0)});
+await T('every admin function checks the role in its body',async()=>{const r=await pool.query(`select proname from pg_proc where pronamespace='public'::regnamespace and proname like 'admin\\_%' and prosrc not like '%require_admin%'`);assert.deepEqual(r.rows,[])});
+await T('anon cannot run any admin function without a session',async()=>{const r=await pool.query(`select p.oid::regprocedure::text f,p.proname n,pronargs a from pg_proc p where pronamespace='public'::regnamespace and proname like 'admin\\_%' and pronargs=0`);for(const x of r.rows)await denied(as(pool,null,'select public.'+x.n+'()'))});
 await T('every table has RLS',async()=>{const r=await pool.query(`select relname from pg_class where relnamespace='public'::regnamespace and relkind='r' and not relrowsecurity`);assert.equal(r.rowCount,0)});
 
+console.log('Sign-in');
+await T('wrong password refused, right one works',async()=>{const r=await signIn('oryx','wrongpass');assert.equal(r.ok,false);assert(!r.token);assert.equal((await signIn('ORYX ','teampass1')).ok,true)});
+await T('unknown username gets the same message',async()=>{const a=await signIn('nobody','x'),b=await signIn('oryx','x');assert.equal(a.message,b.message);await signIn('oryx','teampass1')});
+await T('password hashes and sessions unreadable by API',async()=>{for(const t of['profiles','user_sessions','login_attempts']){await denied(as(pool,null,'select * from '+t));await denied(as(pool,admin,'select * from '+t))}});
+await T('passwords stored only as bcrypt',async()=>{const r=await pool.query(`select password_hash from profiles`);assert(r.rows.every(x=>x.password_hash.startsWith('$2')&&!x.password_hash.includes('teampass')))});
+await T('forged or missing session token gets no rights',async()=>{await denied(as(pool,'f'.repeat(64),'select public.admin_start_auction()'));assert.equal((await as(pool,'f'.repeat(64),'select public.get_my_context() r')).rows[0].r,null);await denied(as(pool,users.Oryx,`select public.login('admin','x'),public.admin_start_auction()`))});
+await T('stored token hash is not itself a valid token',async()=>{const h=(await pool.query(`select token_hash from user_sessions limit 1`)).rows[0].token_hash;assert.equal((await as(pool,h,'select public.get_my_context() r')).rows[0].r,null)});
+await T('expired session rejected',async()=>{const t=(await signIn('dunes','teampass1')).token;await pool.query(`update user_sessions set expires_at=now()-interval '1 second' where token_hash=encode(sha256(convert_to($1,'utf8')),'hex')`,[t]);assert.equal((await as(pool,t,'select public.get_my_context() r')).rows[0].r,null)});
+await T('logout ends the session',async()=>{const t=(await signIn('dunes','teampass1')).token;await as(pool,t,'select public.logout()');assert.equal((await as(pool,t,'select public.get_my_context() r')).rows[0].r,null)});
+await T('10 failed attempts lock the account for a minute',async()=>{await one(admin,'admin_create_team_login',teams.Dunes,'lockme','teampass1');for(let i=0;i<10;i++)await signIn('lockme','bad');const r=await signIn('lockme','teampass1');assert.match(r.message,/Too many/);await pool.query(`update login_attempts set locked_until=now()-interval '1 second' where username='lockme'`);assert.equal((await signIn('lockme','teampass1')).ok,true)});
+await T('change password needs the current one, signs out other devices',async()=>{const a=(await signIn('lockme','teampass1')).token,b=(await signIn('lockme','teampass1')).token;await denied(as(pool,a,`select public.change_password('bad','newpass123')`));await denied(as(pool,a,`select public.change_password('teampass1','short')`));await as(pool,a,`select public.change_password('teampass1','newpass123')`);assert((await as(pool,a,'select public.get_my_context() r')).rows[0].r);assert.equal((await as(pool,b,'select public.get_my_context() r')).rows[0].r,null);assert.equal((await signIn('lockme','teampass1')).ok,false)});
+await T('admin resets a team password; team cannot; session ended',async()=>{const u=(await one(admin,'admin_list_team_logins')).find(x=>x.username==='lockme');const t=(await signIn('lockme','newpass123')).token;await denied(one(users.Oryx,'admin_reset_team_password',u.user_id,'hacked1234'));await one(admin,'admin_reset_team_password',u.user_id,'another1234');assert.equal((await as(pool,t,'select public.get_my_context() r')).rows[0].r,null);assert.equal((await signIn('lockme','another1234')).ok,true);await one(admin,'admin_remove_team_login',u.user_id);assert.equal((await signIn('lockme','another1234')).ok,false)});
+await T('duplicate username and weak input refused',async()=>{await denied(one(admin,'admin_create_team_login',teams.Dunes,'oryx','teampass1'));await denied(one(admin,'admin_create_team_login',teams.Dunes,'a b','teampass1'));await denied(one(admin,'admin_create_team_login',teams.Dunes,'okname','short'))});
+await T('bootstrap can recover the admin password',async()=>{await pool.query(`select private.bootstrap_admin('admin','adminpass2')`);assert.equal((await signIn('admin','adminpass2')).ok,true)});
+admin=(await signIn('admin','adminpass2')).token;
 console.log('Auction flow');
 await approve('Player 1',100);await approve('Player 2',100);for(let i=7;i<=12;i++){await reg(i);await approve('Player '+i,100)}
 const P1=await apOf('Player 1'),P2=await apOf('Player 2');

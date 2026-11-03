@@ -1,5 +1,5 @@
 // Caches only the app shell. API calls are never cached, so bids and results always need a live connection.
-const CACHE = 'league-auction-v1';
+const CACHE = 'league-auction-v2';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js'];
 self.addEventListener('install', e => {

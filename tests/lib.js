@@ -13,11 +13,11 @@ async function boot(port,dir){
   return {pg,pool,url};
 }
 // Runs SQL as an API caller would arrive: restricted role plus JWT subject.
-async function as(pool,user,sql,params=[]){
+async function as(pool,token,sql,params=[]){
   const c=await pool.connect();
   try{await c.query('begin');
-    await c.query(`select set_config('request.jwt.sub',$1,true)`,[user||'']);
-    await c.query(`set local role ${user?'authenticated':'anon'}`);
+    await c.query(`select set_config('request.headers',$1,true)`,[JSON.stringify(token?{'x-league-session':token}:{})]);
+    await c.query('set local role anon');
     const r=await c.query(sql,params);await c.query('commit');return r;
   }catch(e){await c.query('rollback');throw e}finally{c.release()}
 }
