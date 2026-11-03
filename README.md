@@ -94,7 +94,7 @@ These are decisions the brief left open. They are easy to change if your league 
 - **A team's only limits** are its remaining points and squad slots. No points are reserved for filling remaining squad slots, so a team can spend its whole budget on one player.
 - **Marking unsold or skipping** cancels that player's bids. An undone sale returns the player to the queue, and bidding restarts from the base price.
 - **Admin-entered bids** cover a team whose device has failed. They are recorded in the audit log.
-- **Team budgets are public.** Spent and remaining points appear on the projector and to all teams. Sales are public too. Login emails and phone numbers stay private.
+- **Team budgets are public.** Spent and remaining points appear on the projector and to all teams. Sales are public too. Logins and phone numbers stay private.
 
 ### Statistics bar
 
